@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE robot PUBLIC "-//YARP//DTD yarprobotinterface 3.0//EN" "http://www.yarp.it/DTD/yarprobotinterfaceV3.0.dtd">
+<robot name="mcpBatNNavTest" prefix="batteryNNvavServer" portprefix="/batNNavServer" xmlns:xi="http://www.w3.org/2001/XInclude">
+    <devices>
+        <device xmlns:xi="http://www.w3.org/2001/XInclude"  name="batteryTest" type="Yarp_mcpServer_IBattery">
+           <param name="yarp_device" extern-name="battery_yarp_device">battery_nwc_yarp</param>
+           <param name="yarp_remote" extern-name="battery_yarp_remote">/battery_nws</param>
+           <param name="yarp_local" extern-name="battery_yarp_local">/battery_nwc</param>
+        </device>
+        <device xmlns:xi="http://www.w3.org/2001/XInclude"  name="navigationTest" type="Yarp_mcpServer_INavigation2D">
+           <param name="yarp_device" extern-name="navigation_yarp_device">navigation2D_nwc_yarp</param>
+           <param name="yarp_local" extern-name="navigation_yarp_local">/navigation2D_nwc</param>
+        </device>
+    </devices>
+</robot>
