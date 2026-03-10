@@ -11,13 +11,38 @@ This codebase has been written with the contribution of generative AI. While the
 
 ## Overview
 
-This project implements MCP servers that expose YARP device interfaces:
+This project implements MCP servers that expose YARP device interfaces. Each server runs as a separate thread and communicates with YARP devices through local network ports.
 
-- **Yarp_mcpServer_IBattery** - Battery device interface for monitoring battery status and voltage
-- **Yarp_mcpServer_INavigation2D** - 2D Navigation interface for robot path planning and movement
-- **Yarp_mcpServer_ISpeechSynthesizer** - Speech synthesis interface for text-to-speech functionality
+## Available Servers
 
-Each server runs as a separate thread and communicates with YARP devices through local network ports.
+The following MCP servers are currently available:
+
+| Server | Interface | Purpose | Port |
+|--------|-----------|---------|------|
+| `Yarp_mcpServer_IBattery` | `IBattery` | Monitor battery status and voltage information | Dynamic |
+| `Yarp_mcpServer_INavigation2D` | `INavigation2D` | Robot 2D path planning and navigation control | Dynamic |
+| `Yarp_mcpServer_ISpeechSynthesizer` | `ISpeechSynthesizer` | Text-to-speech synthesis and audio output | Dynamic |
+
+### Server Details
+
+#### Yarp_mcpServer_IBattery
+Exposes battery device functionality through MCP tools. Allows querying battery status, voltage, temperature, and other power-related metrics.
+- **Location:** `src/servers/yarp_mcpServer_IBattery/`
+- **Typical Device Type:** `battery_nwc_yarp`
+- **Example Usage:** See [example_usage.py](src/servers/yarp_mcpServer_IBattery/example_usage.py)
+
+#### Yarp_mcpServer_INavigation2D
+Exposes 2D navigation interface for robot path planning and movement control.
+- **Location:** `src/servers/yarp_mcpServer_INavigation2D/`
+- **Typical Device Type:** `navigation_nwc_yarp`
+- **Documentation:** See [README.md](src/servers/yarp_mcpServer_INavigation2D/README.md)
+
+#### Yarp_mcpServer_ISpeechSynthesizer
+Exposes speech synthesis functionality for text-to-speech operations.
+- **Location:** `src/servers/yarp_mcpServer_ISpeechSynthesizer/`
+- **Typical Device Type:** `synth_nwc_yarp`
+- **Example Usage:** See [example_usage.py](src/servers/yarp_mcpServer_ISpeechSynthesizer/example_usage.py)
+- **Documentation:** See [README.md](src/servers/yarp_mcpServer_ISpeechSynthesizer/README.md)
 
 ## Prerequisites
 
