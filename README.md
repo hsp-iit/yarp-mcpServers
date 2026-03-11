@@ -1,6 +1,6 @@
-# YARP MCP Servers for Device Interfaces
+# YARP MCP Servers
 
-A Python-based Model Context Protocol (MCP) server framework that bridges YARP (Yet Another Robot Platform) device interfaces and enables communication through MCP. This project provides server implementations for various YARP device types, allowing seamless integration with AI models and applications that support the MCP protocol.
+A Python-based Model Context Protocol (MCP) server framework that bridges YARP (Yet Another Robot Platform) and enables communication through MCP. This project provides server implementations for various YARP interfaces through device and RPC-based servers, allowing seamless integration with AI models and applications that support the MCP protocol.
 
 ## ⚠️ Disclaimer
 
@@ -11,38 +11,50 @@ This codebase has been written with the contribution of generative AI. While the
 
 ## Overview
 
-This project implements MCP servers that expose YARP device interfaces. Each server runs as a separate thread and communicates with YARP devices through local network ports.
+This project implements MCP servers that expose YARP interfaces. Each server runs as a separate thread and communicates with YARP through local network ports.
 
-## Available Servers
+## Available Server Types
 
-The following MCP servers are currently available:
+The project supports the following categories of MCP servers:
 
-| Server | Interface | Purpose | Port |
-|--------|-----------|---------|------|
-| `Yarp_mcpServer_IBattery` | `IBattery` | Monitor battery status and voltage information | Dynamic |
-| `Yarp_mcpServer_INavigation2D` | `INavigation2D` | Robot 2D path planning and navigation control | Dynamic |
-| `Yarp_mcpServer_ISpeechSynthesizer` | `ISpeechSynthesizer` | Text-to-speech synthesis and audio output | Dynamic |
+| Category | Location | Purpose |
+|----------|----------|----------|
+| **Device Servers** | `src/servers/devices/` | Expose YARP device interfaces (IBattery, INavigation2D, ISpeechSynthesizer, etc.) |
+| **RPC Servers** | `src/servers/rpc/` | Expose YARP RPC-based services |
 
-### Server Details
+### Device Servers
+
+Device servers expose YARP hardware device interfaces through MCP tools:
+- `Yarp_mcpServer_IBattery` - Battery status monitoring
+- `Yarp_mcpServer_INavigation2D` - 2D robot navigation and path planning
+- `Yarp_mcpServer_ISpeechSynthesizer` - Text-to-speech synthesis
+
+Each device server is located in its own directory under `src/servers/devices/` and can be independently configured and launched.
+
+### RPC Servers
+
+RPC servers expose YARP services through the RPC protocol. Add new RPC server implementations in `src/servers/rpc/`.
+
+## Device Server Details
 
 #### Yarp_mcpServer_IBattery
 Exposes battery device functionality through MCP tools. Allows querying battery status, voltage, temperature, and other power-related metrics.
-- **Location:** `src/servers/yarp_mcpServer_IBattery/`
+- **Location:** `src/servers/devices/yarp_mcpServer_IBattery/`
 - **Typical Device Type:** `battery_nwc_yarp`
-- **Example Usage:** See [example_usage.py](src/servers/yarp_mcpServer_IBattery/example_usage.py)
+- **Example Usage:** See [example_usage.py](src/servers/devices/yarp_mcpServer_IBattery/example_usage.py)
 
 #### Yarp_mcpServer_INavigation2D
 Exposes 2D navigation interface for robot path planning and movement control.
-- **Location:** `src/servers/yarp_mcpServer_INavigation2D/`
+- **Location:** `src/servers/devices/yarp_mcpServer_INavigation2D/`
 - **Typical Device Type:** `navigation_nwc_yarp`
-- **Documentation:** See [README.md](src/servers/yarp_mcpServer_INavigation2D/README.md)
+- **Documentation:** See [README.md](src/servers/devices/yarp_mcpServer_INavigation2D/README.md)
 
 #### Yarp_mcpServer_ISpeechSynthesizer
 Exposes speech synthesis functionality for text-to-speech operations.
-- **Location:** `src/servers/yarp_mcpServer_ISpeechSynthesizer/`
+- **Location:** `src/servers/devices/yarp_mcpServer_ISpeechSynthesizer/`
 - **Typical Device Type:** `synth_nwc_yarp`
-- **Example Usage:** See [example_usage.py](src/servers/yarp_mcpServer_ISpeechSynthesizer/example_usage.py)
-- **Documentation:** See [README.md](src/servers/yarp_mcpServer_ISpeechSynthesizer/README.md)
+- **Example Usage:** See [example_usage.py](src/servers/devices/yarp_mcpServer_ISpeechSynthesizer/example_usage.py)
+- **Documentation:** See [README.md](src/servers/devices/yarp_mcpServer_ISpeechSynthesizer/README.md)
 
 ## Prerequisites
 
@@ -140,42 +152,43 @@ yarp_local /custom_battery_nwc
 ## Project Structure
 
 ```
-yarp-mcpServers-devices/
+yarp-mcpServers/
 ├── yarp_server_launcher.py      # Main launcher script
-├── example.xml                   # Example configuration file
-├── example.ini                   # Example parameter overrides
 ├── pyproject.toml               # Project dependencies and metadata
+├── resources/
+│   └── contexts/
+│       └── test_servers/        # Test configuration files
 └── src/
     ├── modules/
     │   └── McpConfigParser.py   # Configuration parsing utilities
     └── servers/
-        ├── yarp_mcpServer_IBattery/           # Battery interface MCP server
-        ├── yarp_mcpServer_INavigation2D/      # Navigation interface MCP server
-        └── yarp_mcpServer_ISpeechSynthesizer/ # Speech synthesis MCP server
+        ├── devices/             # Device-based MCP servers
+        │   ├── yarp_mcpServer_IBattery/
+        │   ├── yarp_mcpServer_INavigation2D/
+        │   └── yarp_mcpServer_ISpeechSynthesizer/
+        ├── rpc/                 # RPC-based MCP servers
+        └── thrift/              # Thrift-based MCP servers
 ```
 
 ## Running Servers
 
-### Single Server
+### Device Servers
 ```bash
+# Single device server
 python yarp_server_launcher.py --from resources/contexts/test_servers/test_battery.xml
-```
 
-### Multiple Servers (Battery + Navigation)
-```bash
+# Multiple device servers
 python yarp_server_launcher.py --from resources/contexts/test_servers/test_batteryNnavigation.xml
-```
 
-### All Servers (Battery + Navigation + Speech Synthesizer)
-```bash
+# All device servers
 python yarp_server_launcher.py --from resources/contexts/test_servers/test_batteryNnavigationNSynth.xml
 ```
 
 ### With Parameter Overrides
 ```bash
-python yarp_server_launcher.py --from example.xml \
-    --set battery_yarp_remote /my_battery_nws \
-    --set battery_yarp_local /my_battery_nwc
+python yarp_server_launcher.py --from config.xml \
+    --set device_yarp_remote /my_device_nws \
+    --set device_yarp_local /my_device_nwc
 ```
 
 ## Stopping Servers
@@ -201,17 +214,21 @@ Verify that:
 3. YARP network is properly configured (`yarp detect` to check)
 
 ### "Server class not found"
-Ensure the device `type` attribute in your XML config matches an available server class name:
-- `Yarp_mcpServer_IBattery`
-- `Yarp_mcpServer_INavigation2D`
-- `Yarp_mcpServer_ISpeechSynthesizer`
+Ensure the device `type` attribute in your XML config matches an available server class name
 
 ## Development
 
-To add new MCP servers for additional YARP interfaces:
+### Adding New Device Servers
 
-1. Create a new package in `src/servers/yarp_mcpServer_<InterfaceName>/`
-2. Implement the server class following the pattern of existing servers
+1. Create a new package in `src/servers/devices/yarp_mcpServer_<InterfaceName>/`
+2. Implement the server class following the pattern of existing device servers
+3. Add the server to the configuration XML with `type="Yarp_mcpServer_<InterfaceName>"`
+4. Launch with `yarp_server_launcher.py`
+
+### Adding New RPC Servers
+
+1. Create a new module or package in `src/servers/rpc/`
+2. Implement the RPC server class
 3. Add the server to the configuration XML
 4. Launch with `yarp_server_launcher.py`
 
