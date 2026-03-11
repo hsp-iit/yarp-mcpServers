@@ -1151,7 +1151,7 @@ Remember that left means rotating counterclockwise (increasing theta), and right
             except Exception as e:
                 logger.warning(f"Error during cleanup: {e}")
 
-    def run(self, host: str = "127.0.0.1", port: int = 4002):
+    def run(self, host: str = None, port: int = None):
         """
         Run the MCP server using uvicorn.
         """
@@ -1187,29 +1187,20 @@ Remember that left means rotating counterclockwise (increasing theta), and right
 
         self.is_initialized = True
 
+        host_i = host if host else self.base_url
+        port_i = port if port else self.mcp_port
         try:
-            logger.info(f"Starting YARP Navigation MCP Server on {host}:{port}")
+            logger.info(f"Starting YARP Navigation MCP Server on {host_i}:{port_i}")
             # Get the ASGI app from FastMCP
             asgi_app = self.mcp.streamable_http_app()
             # Run the app with uvicorn
-            uvicorn.run(asgi_app, host=host, port=port)
+            uvicorn.run(asgi_app, host=host_i, port=port_i)
         except Exception as e:
             logger.error(f"Server error: {e}")
             sys.exit(1)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="YARP Navigation MCP Server")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=4002, help="Server port (default: 4002)")
-    parser.add_argument("--yarp_device", type=str, default="navigation2D_nwc_yarp", help="YARP device name (default: navigation2D_nwc_yarp)")
-    parser.add_argument("--yarp_remote", type=str, default="/navigation2D_nws_yarp", help="YARP remote port (default: /navigation2D_nws_yarp)")
-    parser.add_argument("--yarp_local", type=str, default="/navigation2D_nwc_yarp", help="YARP local port (default: /navigation2D_nwc_yarp)")
-    parser.add_argument("--navigation_server", type=str, default="/navigation2D_nws_yarp", help="Navigation server port (default: /navigation2D_nws_yarp)")
-    parser.add_argument("--map_locations_server", type=str, default="/map2D_nws_yarp", help="Map locations server port (default: /map2D_nws_yarp)")
-    parser.add_argument("--localization_server", type=str, default="/localization2D_nws_yarp", help="Localization server port (default: /localization2D_nws_yarp)")
-    args = parser.parse_args()
-
-    # Convert args to dict for config
-    config = vars(args)
+    config = yarp.ResourceFinder()
+    config.configure(sys.argv)
     server = Yarp_mcpServer_INavigation2D(config)
-    server.run(host=args.host, port=args.port)
+    server.run()

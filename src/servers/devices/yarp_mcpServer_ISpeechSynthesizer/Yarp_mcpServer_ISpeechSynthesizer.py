@@ -477,5 +477,5 @@ if __name__ == "__main__":
 
     # Convert args to dict for config
     config = vars(args)
-    server = YarpSpeechSynthMCP(config)
+    server = Yarp_mcpServer_ISpeechSynthesizer(config)
     server.run(host=args.host, port=args.port)

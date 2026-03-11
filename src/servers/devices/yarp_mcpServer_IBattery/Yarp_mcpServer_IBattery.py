@@ -437,7 +437,7 @@ class Yarp_mcpServer_IBattery:
             except:
                 pass
 
-    def run(self, host: str = "127.0.0.1", port: int = 4001):
+    def run(self, host: str = None, port: int = None):
         """
         Run the MCP server using FastMCP's built-in server.
         """
@@ -460,24 +460,22 @@ class Yarp_mcpServer_IBattery:
             logger.error(f"Failed to view IBattery interface for {self.device_name}.")
             return
 
+        host_i = host if host else self.base_url
+        port_i = port if port else self.mcp_port
         try:
             import uvicorn
             # Get the ASGI app from FastMCP
             asgi_app = self.mcp.streamable_http_app()
 
             # Run the app directly without mounting
-            uvicorn.run(asgi_app, host=host, port=port)
+            uvicorn.run(asgi_app, host=host_i, port=port_i)
         except Exception as e:
             logger.exception("Failed to run MCP server: %s", e)
             raise
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="YARP Battery MCP Server")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=4001, help="Server port (default: 4001)")
-    parser.add_argument("--yarp_remote", type=str, default="/battery_nws", help="YARP remote port (default: /battery_nws)")
-    parser.add_argument("--yarp_local", type=str, default="/mcp_battery/client", help="YARP local port (default: /mcp_battery/client)")
-    args = parser.parse_args()
+    config = yarp.ResourceFinder()
+    config.configure(sys.argv)
 
-    server = YarpBatteryMCP(args)
-    server.run(host=args.host, port=args.port)
+    server = Yarp_mcpServer_IBattery(config)
+    server.run()
