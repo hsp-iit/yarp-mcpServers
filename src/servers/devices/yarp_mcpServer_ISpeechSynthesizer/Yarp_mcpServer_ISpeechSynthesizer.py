@@ -100,7 +100,7 @@ class Yarp_mcpServer_ISpeechSynthesizer:
         @self.mcp.tool()
         async def synthesize_speech(text: str, language: str = "auto", voice: str = "auto",
                                   speed: float = 1.0, pitch: float = 1.0) -> dict[str, Any]:
-            """Generate speech audio from text using the YARP MCP server. The system will create audio and report details like sample count, frequency, and channels."""
+            """Generate speech audio from text using the YARP MCP server. The language has to be set using standard codes (e.g., 'en-US', 'fr-FR'). The system will create audio and report details like sample count, frequency, and channels."""
             # ... (kept your implementation unchanged)
             if not self.is_initialized:
                 return {
@@ -293,11 +293,9 @@ RESPONSE PATTERN (follow this exactly every time):
 
 FOR EVERY USER MESSAGE:
 1. Compose your complete response
-2. Call get_speech_status to check initialization
-3. If not initialized, call initialize_yarp_speech
-4. Call synthesize_speech ONCE with your entire response text
-5. Display the synthesized response to user
-6. Confirm synthesis completed
+2. Call synthesize_speech ONCE with your entire response text
+3. Display the synthesized response to user
+4. Confirm synthesis completed
 
 ABSOLUTELY DO NOT:
 ✗ Skip synthesis
@@ -309,7 +307,7 @@ ABSOLUTELY DO NOT:
 ✗ Make synthesis optional based on context
 
 ALWAYS:
-✓ Synthesize every response
+✓ Synthesize every response (call synthesize_speech every time)
 ✓ Synthesize the complete response in one call
 ✓ Initialize if needed before synthesis
 ✓ Confirm synthesis to user
@@ -320,11 +318,8 @@ PROTOCOL: Speech-First Response Pattern
 
 1. User sends message
 2. You compose complete response text
-3. Check speech status: get_speech_status()
-4. If needed: initialize_yarp_speech()
-5. Synthesize complete response: synthesize_speech(text="YOUR_COMPLETE_RESPONSE")
-6. Return synthesized response to user
-7. Confirm "(Synthesized into speech)"
+3. Synthesize complete response: synthesize_speech(text="YOUR_COMPLETE_RESPONSE")
+4. Return synthesized response to user
 
 CRITICAL: Treat synthesize_speech as a mandatory part of every response, not optional.
 
@@ -332,7 +327,7 @@ CRITICAL: Treat synthesize_speech as a mandatory part of every response, not opt
 ENFORCEMENT: These rules are absolute and non-negotiable
 ═══════════════════════════════════════════════════════════════════════════════
 
-Failure to follow this pattern is a system error. You MUST synthesize every response.
+Failure to follow this pattern is a system error. You MUST call synthesize_speech for every response.
 This is your core function. Act accordingly."""
 
     def _start_info_port(self):

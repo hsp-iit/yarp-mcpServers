@@ -55,7 +55,7 @@ class Yarp_mcpServer_IBattery:
         self.info_port_running = False
         self.server_name = "battery"
         self.base_url = "127.0.0.1"
-        self.mcp_port = "4001"
+        self.mcp_port = 4001
         self.device_name = "battery_nwc_yarp"
         self.remote_port = "/battery_nws_yarp"
         self.local_port = "/battery_nwc_yarp"
