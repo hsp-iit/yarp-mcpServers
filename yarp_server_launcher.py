@@ -10,6 +10,7 @@ if __name__ == "__main__":
     print("This is the main module.")
     rfArgs = yarp.ResourceFinder()
     rfArgs.configure(sys.argv)
+    print(f"Command-line arguments: {sys.argv}")
     parser = McpConfigParser(rfArgs)
     config_data = parser.get_all_settings()
     minimal_devices_info = parser.get_minimal_devices_info()
@@ -20,6 +21,9 @@ if __name__ == "__main__":
         if cls.__module__.startswith('src.servers')
     }
     print(f"Available servers: {AvailableServers}")
+    if "--just_import" in sys.argv:
+        print("Just import flag is set. Exiting without starting servers.")
+        sys.exit(0)
 
     # List to keep track of server threads
     server_threads = []
