@@ -131,7 +131,16 @@ class Yarp_mcpServer_IBattery:
 
         @self.mcp.tool()
         async def get_battery_charge() -> dict[str, Any]:
-            """Get the battery charge level (state of charge) as a percentage (0-100%)."""
+            """
+            Get the battery charge level (state of charge) as a percentage (0-100%).
+            x-monitoring metadata:
+            {
+                "pollable": true,
+                "expected_fields": ["charge"],
+                "suggested_conditions": ["charge < 20"],
+                "polling_suggestion": "1.0 second"
+            }
+            """
             if self.battery_interface is None:
                 return {
                     "success": False,
