@@ -245,7 +245,20 @@ class Yarp_mcpServer_INavigation2D:
 
         @self.mcp.tool()
         async def get_navigation_status() -> dict[str, Any]:
+<<<<<<< Updated upstream
             """Get the current navigation status (idle, moving, goal_reached, aborted, etc.)."""
+=======
+            """
+            Get the current navigation status (idle, moving, goal_reached, aborted, etc.).
+            x-monitoring metadata:
+            {
+                "pollable": true,
+                "expected_fields": ["status", "success", "status_code"],
+                "suggested_conditions": ["status == 'goal_reached'"],
+                "polling_suggestion": "1.0 second"
+            }
+            """
+>>>>>>> Stashed changes
             if not self.is_initialized:
                 return {
                     "success": False,
@@ -1077,8 +1090,52 @@ ALWAYS provide the absolute target location in the map reference frame as X, Y c
     def _build_system_prompt_addendum(self) -> str:
         """Build system prompt addendum for the client to modify LLM behavior"""
         return """
+<<<<<<< Updated upstream
 Remember that left means rotating counterclockwise (increasing theta), and right means rotating clockwise (decreasing theta) from the current robot orientation.
         """
+=======
+═════════════════════════════════════════════════════════════════════════════════
+NAVIGATION SERVER INSTRUCTIONS:
+═════════════════════════════════════════════════════════════════════════════════
+
+COORDINATE SYSTEM & ORIENTATION:
+- Remember that left means rotating counterclockwise (increasing theta)
+- Right means rotating clockwise (decreasing theta) from the current robot orientation
+- X of the map is aligned with 0 degrees orientation
+- Y is aligned with 90 degrees orientation
+
+MONITORING FOR NAVIGATION (CRITICAL):
+When the user asks you to navigate somewhere, ALWAYS follow this pattern:
+  1. Call goto_target_by_absolute_location() or goto_target_by_relative_location()
+  2. IMMEDIATELY call start_monitoring("get_navigation_status", "status == 'goal_reached' or status == 'failed'", timeout=300.0)
+  3. Tell the user you're starting navigation and will notify them when complete
+  4. DO NOT wait for the navigation to complete - let monitoring run in the background
+
+Example Navigation with Monitoring:
+  User: "Navigate to the kitchen (x=5, y=3)"
+  → Call: goto_target_by_absolute_location(x=5.0, y=3.0, theta=0.0)
+  → Call: start_monitoring("get_navigation_status", "status == 'goal_reached' or status == 'failed'", timeout=300.0)
+  → Response: "Starting navigation to coordinates (5.0, 3.0). I'll monitor progress and notify you when complete."
+
+Navigation Status Values:
+The get_navigation_status() tool returns: idle, preparing, moving, waiting_obstacle, goal_reached, aborted, failing, paused, thinking, error
+
+Relative Movement Conversion:
+If the user asks for relative movements like "go forward 1 meter" or "turn right 90 degrees":
+  - Get current position using get_current_position()
+  - Convert relative movement to absolute coordinates
+  - Call goto_target_by_absolute_location() with the computed absolute target
+  - Monitor the navigation as described above
+
+Example Relative Navigation:
+  User: "Go forward 2 meters"
+  → Call: get_current_position() to get current x, y, theta
+  → Compute: new_x = current_x + 2.0 * cos(theta_radians), new_y = current_y + 2.0 * sin(theta_radians)
+  → Call: goto_target_by_absolute_location(x=new_x, y=new_y, theta=current_theta)
+  → Call: start_monitoring("get_navigation_status", "status == 'goal_reached' or status == 'failed'", timeout=300.0)
+  → Response: "Moving forward 2 meters with monitoring enabled. I'll notify you when complete."
+═════════════════════════════════════════════════════════════════════════════════"""
+>>>>>>> Stashed changes
 
 
     def _start_info_port(self):
