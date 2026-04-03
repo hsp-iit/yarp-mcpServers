@@ -70,7 +70,7 @@ class Yarp_mcpServer_IBattery:
             if conf.check("mcp_host"):
                 self.base_url = conf.find("mcp_host").asString()
             if conf.check("mcp_port"):
-                self.mcp_port = conf.find("mcp_port").asInt()
+                self.mcp_port = conf.find("mcp_port").asInt16()
         self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
 
         # Register tools
@@ -477,6 +477,7 @@ class Yarp_mcpServer_IBattery:
             asgi_app = self.mcp.streamable_http_app()
 
             # Run the app directly without mounting
+            logger.info(f"Starting YARP Battery MCP Server on {host_i}:{port_i}")
             uvicorn.run(asgi_app, host=host_i, port=port_i)
         except Exception as e:
             logger.exception("Failed to run MCP server: %s", e)

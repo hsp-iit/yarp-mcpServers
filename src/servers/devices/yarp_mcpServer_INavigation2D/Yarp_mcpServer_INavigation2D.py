@@ -82,7 +82,7 @@ class Yarp_mcpServer_INavigation2D:
                 if conf.check("mcp_host"):
                     self.base_url = conf.find("mcp_host").asString()
                 if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt()
+                    self.mcp_port = conf.find("mcp_port").asInt16()
             elif isinstance(conf, dict):
                 # Dict-like config
                 self.device_name = conf.get("yarp_device", self.device_name)
@@ -245,30 +245,16 @@ class Yarp_mcpServer_INavigation2D:
 
         @self.mcp.tool()
         async def get_navigation_status() -> dict[str, Any]:
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-            """Get the current navigation status (idle, moving, goal_reached, aborted, etc.)."""
-=======
-=======
->>>>>>> 8a3b127 (X - DO NOT PUSH - X)
             """
             Get the current navigation status (idle, moving, goal_reached, aborted, etc.).
             x-monitoring metadata:
             {
                 "pollable": true,
                 "expected_fields": ["status", "success", "status_code"],
-<<<<<<< HEAD
                 "suggested_conditions": ["status == 'goal_reached'"],
                 "polling_suggestion": "1.0 second"
             }
             """
->>>>>>> Stashed changes
-=======
-                "suggested_conditions": ["status == 'reached'"],
-                "polling_suggestion": "1.0 second"
-            }
-            """
->>>>>>> 8a3b127 (X - DO NOT PUSH - X)
             if not self.is_initialized:
                 return {
                     "success": False,
@@ -1100,13 +1086,6 @@ ALWAYS provide the absolute target location in the map reference frame as X, Y c
     def _build_system_prompt_addendum(self) -> str:
         """Build system prompt addendum for the client to modify LLM behavior"""
         return """
-<<<<<<< HEAD
-<<<<<<< Updated upstream
-Remember that left means rotating counterclockwise (increasing theta), and right means rotating clockwise (decreasing theta) from the current robot orientation.
-        """
-=======
-=======
->>>>>>> 8a3b127 (X - DO NOT PUSH - X)
 ═════════════════════════════════════════════════════════════════════════════════
 NAVIGATION SERVER INSTRUCTIONS:
 ═════════════════════════════════════════════════════════════════════════════════
@@ -1120,22 +1099,14 @@ COORDINATE SYSTEM & ORIENTATION:
 MONITORING FOR NAVIGATION (CRITICAL):
 When the user asks you to navigate somewhere, ALWAYS follow this pattern:
   1. Call goto_target_by_absolute_location() or goto_target_by_relative_location()
-<<<<<<< HEAD
   2. IMMEDIATELY call start_monitoring("get_navigation_status", "status == 'goal_reached' or status == 'failed'", timeout=300.0)
-=======
-  2. IMMEDIATELY call start_monitoring("get_navigation_status", "status == 'reached' or status == 'failed'", timeout=300.0)
->>>>>>> 8a3b127 (X - DO NOT PUSH - X)
   3. Tell the user you're starting navigation and will notify them when complete
   4. DO NOT wait for the navigation to complete - let monitoring run in the background
 
 Example Navigation with Monitoring:
   User: "Navigate to the kitchen (x=5, y=3)"
   → Call: goto_target_by_absolute_location(x=5.0, y=3.0, theta=0.0)
-<<<<<<< HEAD
   → Call: start_monitoring("get_navigation_status", "status == 'goal_reached' or status == 'failed'", timeout=300.0)
-=======
-  → Call: start_monitoring("get_navigation_status", "status == 'reached' or status == 'failed'", timeout=300.0)
->>>>>>> 8a3b127 (X - DO NOT PUSH - X)
   → Response: "Starting navigation to coordinates (5.0, 3.0). I'll monitor progress and notify you when complete."
 
 Navigation Status Values:
@@ -1153,16 +1124,9 @@ Example Relative Navigation:
   → Call: get_current_position() to get current x, y, theta
   → Compute: new_x = current_x + 2.0 * cos(theta_radians), new_y = current_y + 2.0 * sin(theta_radians)
   → Call: goto_target_by_absolute_location(x=new_x, y=new_y, theta=current_theta)
-<<<<<<< HEAD
   → Call: start_monitoring("get_navigation_status", "status == 'goal_reached' or status == 'failed'", timeout=300.0)
   → Response: "Moving forward 2 meters with monitoring enabled. I'll notify you when complete."
 ═════════════════════════════════════════════════════════════════════════════════"""
->>>>>>> Stashed changes
-=======
-  → Call: start_monitoring("get_navigation_status", "status == 'reached' or status == 'failed'", timeout=300.0)
-  → Response: "Moving forward 2 meters with monitoring enabled. I'll notify you when complete."
-═════════════════════════════════════════════════════════════════════════════════"""
->>>>>>> 8a3b127 (X - DO NOT PUSH - X)
 
 
     def _start_info_port(self):
