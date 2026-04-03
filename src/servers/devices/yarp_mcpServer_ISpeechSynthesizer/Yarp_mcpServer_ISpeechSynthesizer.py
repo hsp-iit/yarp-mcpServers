@@ -77,7 +77,7 @@ class Yarp_mcpServer_ISpeechSynthesizer:
                 if conf.check("mcp_host"):
                     self.base_url = conf.find("mcp_host").asString()
                 if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt()
+                    self.mcp_port = conf.find("mcp_port").asInt16()
             elif isinstance(conf, dict):
                 # Dict-like config
                 self.device_name = conf.get("yarp_device", self.device_name)
@@ -409,7 +409,7 @@ This is your core function. Act accordingly."""
             except:
                 pass
 
-    def run(self, host: str = "127.0.0.1", port: int = 4000):
+    def run(self, host: str = None, port: int = None):
         """
         Run the MCP server using FastMCP's built-in server.
         """
@@ -448,6 +448,9 @@ This is your core function. Act accordingly."""
             self.output_port = None
 
         self.is_initialized = True
+
+        host = host if host else self.base_url
+        port = port if port else self.mcp_port
 
         try:
             import uvicorn

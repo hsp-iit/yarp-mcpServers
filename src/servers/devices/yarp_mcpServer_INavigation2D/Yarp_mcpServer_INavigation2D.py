@@ -82,7 +82,7 @@ class Yarp_mcpServer_INavigation2D:
                 if conf.check("mcp_host"):
                     self.base_url = conf.find("mcp_host").asString()
                 if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt()
+                    self.mcp_port = conf.find("mcp_port").asInt16()
             elif isinstance(conf, dict):
                 # Dict-like config
                 self.device_name = conf.get("yarp_device", self.device_name)
@@ -245,9 +245,6 @@ class Yarp_mcpServer_INavigation2D:
 
         @self.mcp.tool()
         async def get_navigation_status() -> dict[str, Any]:
-<<<<<<< Updated upstream
-            """Get the current navigation status (idle, moving, goal_reached, aborted, etc.)."""
-=======
             """
             Get the current navigation status (idle, moving, goal_reached, aborted, etc.).
             x-monitoring metadata:
@@ -258,7 +255,6 @@ class Yarp_mcpServer_INavigation2D:
                 "polling_suggestion": "1.0 second"
             }
             """
->>>>>>> Stashed changes
             if not self.is_initialized:
                 return {
                     "success": False,
@@ -1090,10 +1086,6 @@ ALWAYS provide the absolute target location in the map reference frame as X, Y c
     def _build_system_prompt_addendum(self) -> str:
         """Build system prompt addendum for the client to modify LLM behavior"""
         return """
-<<<<<<< Updated upstream
-Remember that left means rotating counterclockwise (increasing theta), and right means rotating clockwise (decreasing theta) from the current robot orientation.
-        """
-=======
 ═════════════════════════════════════════════════════════════════════════════════
 NAVIGATION SERVER INSTRUCTIONS:
 ═════════════════════════════════════════════════════════════════════════════════
@@ -1135,7 +1127,6 @@ Example Relative Navigation:
   → Call: start_monitoring("get_navigation_status", "status == 'goal_reached' or status == 'failed'", timeout=300.0)
   → Response: "Moving forward 2 meters with monitoring enabled. I'll notify you when complete."
 ═════════════════════════════════════════════════════════════════════════════════"""
->>>>>>> Stashed changes
 
 
     def _start_info_port(self):

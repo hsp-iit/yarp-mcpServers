@@ -70,7 +70,7 @@ class Yarp_mcpServer_IBattery:
             if conf.check("mcp_host"):
                 self.base_url = conf.find("mcp_host").asString()
             if conf.check("mcp_port"):
-                self.mcp_port = conf.find("mcp_port").asInt()
+                self.mcp_port = conf.find("mcp_port").asInt16()
         self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
 
         # Register tools
@@ -131,7 +131,16 @@ class Yarp_mcpServer_IBattery:
 
         @self.mcp.tool()
         async def get_battery_charge() -> dict[str, Any]:
-            """Get the battery charge level (state of charge) as a percentage (0-100%)."""
+            """
+            Get the battery charge level (state of charge) as a percentage (0-100%).
+            x-monitoring metadata:
+            {
+                "pollable": true,
+                "expected_fields": ["charge"],
+                "suggested_conditions": ["charge < 20"],
+                "polling_suggestion": "1.0 second"
+            }
+            """
             if self.battery_interface is None:
                 return {
                     "success": False,
@@ -468,6 +477,7 @@ class Yarp_mcpServer_IBattery:
             asgi_app = self.mcp.streamable_http_app()
 
             # Run the app directly without mounting
+            logger.info(f"Starting YARP Battery MCP Server on {host_i}:{port_i}")
             uvicorn.run(asgi_app, host=host_i, port=port_i)
         except Exception as e:
             logger.exception("Failed to run MCP server: %s", e)

@@ -68,9 +68,9 @@ class Yarp_mcpServer_WakeWordRPC:
                 if conf.check("mcp_host"):
                     self.base_url = conf.find("mcp_host").asString()
                 if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt()
+                    self.mcp_port = conf.find("mcp_port").asInt16()
                 if conf.check("autoconnect"):
-                    self.autoconnect = conf.find("autoconnect").asInt() != 0
+                    self.autoconnect = conf.find("autoconnect").asInt8() != 0
             elif isinstance(conf, dict):
                 # Dict-like config
                 self.remote_port_name = conf.get("yarp_remote", self.remote_port)
@@ -276,7 +276,7 @@ System Prompt Addendum:
 
         try:
             import uvicorn
-            logger.info(f"Starting YARP Speech Synthesis MCP Server on {host_i}:{port_i}")
+            logger.info(f"Starting YARP WakeWord MCP Server on {host_i}:{port_i}")
             # Get the ASGI app from FastMCP
             asgi_app = self.mcp.streamable_http_app()
 
