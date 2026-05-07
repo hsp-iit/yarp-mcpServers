@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE robot PUBLIC "-//YARP//DTD yarprobotinterface 3.0//EN" "http://www.yarp.it/DTD/yarprobotinterfaceV3.0.dtd">
+<robot name="mcpJsonTest" prefix="jsonServer" portprefix="/jsonServer" xmlns:xi="http://www.w3.org/2001/XInclude">
+    <devices>
+        <device xmlns:xi="http://www.w3.org/2001/XInclude"  name="jsonTest" type="Yarp_mcpServer_JsonRes">
+           <param name="json_file" extern-name="json_file">test_data.json</param>
+           <param name="mcp_host" extern-name="mcp_host">127.0.0.1</param>
+           <param name="mcp_port" extern-name="mcp_port">4007</param>
+        </device>
+    </devices>
+</robot>
