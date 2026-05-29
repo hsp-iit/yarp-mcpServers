@@ -9,6 +9,7 @@ Then the MCP endpoint will be available at:
     http://127.0.0.1:4002/mcp
 """
 
+import asyncio
 import sys
 import logging
 import json
