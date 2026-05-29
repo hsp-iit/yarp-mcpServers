@@ -18,9 +18,11 @@ import inspect
 import threading
 import time
 import argparse
+import uuid
+from datetime import datetime, timezone
 
 # MCP imports
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Context
 from mcp.server.models import InitializationOptions
 from mcp.types import (
     Resource,
@@ -28,7 +30,10 @@ from mcp.types import (
     TextContent,
     ImageContent,
     EmbeddedResource,
-    LoggingLevel
+    LoggingLevel,
+    ServerNotification,
+    TaskStatusNotification,
+    TaskStatusNotificationParams
 )
 
 # Try to import YARP
@@ -60,6 +65,15 @@ class Yarp_mcpServer_IBattery:
         self.remote_port = "/battery_nws_yarp"
         self.local_port = "/battery_nwc_yarp"
 
+        # Notification infrastructure for MCP streaming.
+        # Clients subscribe with subscribe_notifications(); monitoring tasks then
+        # broadcast official notifications/tasks/status messages to those sessions.
+        self.notification_sessions = {}
+        self.notification_lock = threading.Lock()
+        self.task_counter = 0
+        self.task_created_at = {}
+        self.battery_monitor_tasks = {}
+
         if conf:
             if conf.check("yarp_device"):
                 self.device_name = conf.find("yarp_device").asString()
@@ -72,12 +86,204 @@ class Yarp_mcpServer_IBattery:
             if conf.check("mcp_port"):
                 self.mcp_port = conf.find("mcp_port").asInt16()
         self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
+        self.system_prompt_addendum = self._build_system_prompt_addendum()
 
         # Register tools
         self._register_tools()
 
+    def _new_task_id(self, prefix: str) -> str:
+        """Generate a unique server-side monitoring task ID."""
+        with self.notification_lock:
+            self.task_counter += 1
+            return f"{prefix}_{self.task_counter}_{uuid.uuid4().hex[:8]}"
+
+    def _register_notification_session(self, session: Any) -> str:
+        """Remember a session that wants server-side task notifications."""
+        session_key = str(id(session))
+        with self.notification_lock:
+            self.notification_sessions[session_key] = session
+        return session_key
+
+    def _task_created_time(self, task_id: str) -> datetime:
+        """Return the original creation time for a task notification."""
+        with self.notification_lock:
+            return self.task_created_at.setdefault(task_id, datetime.now(timezone.utc))
+
+    async def _emit_task_status_to_subscribers(
+        self,
+        task_id: str,
+        status: str,
+        tool: str,
+        data: dict[str, Any] | None = None,
+        status_message: str | None = None,
+        event: str | None = None,
+    ) -> None:
+        """Emit an official MCP task-status notification to subscribed sessions."""
+        created_at = self._task_created_time(task_id)
+        params = TaskStatusNotificationParams(
+            taskId=task_id,
+            status=status,
+            statusMessage=status_message,
+            createdAt=created_at,
+            lastUpdatedAt=datetime.now(timezone.utc),
+            ttl=None,
+            tool=tool,
+            event=event or status,
+            data=data or {},
+        )
+        notification = ServerNotification(TaskStatusNotification(params=params))
+
+        with self.notification_lock:
+            sessions = list(self.notification_sessions.items())
+
+        dead_sessions = []
+        for session_key, session in sessions:
+            try:
+                await session.send_notification(notification)
+            except Exception as e:
+                logger.debug(f"Failed to emit task notification to session {session_key}: {e}")
+                dead_sessions.append(session_key)
+
+        if dead_sessions:
+            with self.notification_lock:
+                for session_key in dead_sessions:
+                    self.notification_sessions.pop(session_key, None)
+
+    async def _emit_tool_snapshot(self, tool: str, data: dict[str, Any]) -> None:
+        """Broadcast a non-terminal snapshot from a synchronous getter tool."""
+        task_id = self._new_task_id(f"{tool}_snapshot")
+        await self._emit_task_status_to_subscribers(
+            task_id=task_id,
+            status="working",
+            tool=tool,
+            data=data,
+            status_message=f"{tool} status update",
+            event="status_changed",
+        )
+        with self.notification_lock:
+            self.task_created_at.pop(task_id, None)
+
+    async def _battery_charge_monitor_loop(
+        self,
+        task_id: str,
+        threshold: float,
+        direction: str,
+        poll_interval: float,
+        timeout: float,
+    ) -> None:
+        """Poll battery charge and notify subscribers when the threshold is crossed."""
+        start_time = time.monotonic()
+        comparison = "<" if direction == "below" else ">"
+
+        try:
+            await self._emit_task_status_to_subscribers(
+                task_id=task_id,
+                status="working",
+                tool="get_battery_charge",
+                data={
+                    "threshold": threshold,
+                    "direction": direction,
+                    "condition": f"charge {comparison} {threshold}",
+                },
+                status_message=f"Monitoring battery charge until it is {direction} {threshold}%",
+                event="started",
+            )
+            await asyncio.sleep(poll_interval)
+
+            while True:
+                if self.battery_interface is None:
+                    await self._emit_task_status_to_subscribers(
+                        task_id=task_id,
+                        status="failed",
+                        tool="get_battery_charge",
+                        data={
+                            "threshold": threshold,
+                            "direction": direction,
+                            "error": "YARP battery not initialized",
+                        },
+                        status_message="Battery monitor failed: interface not initialized",
+                        event="failed",
+                    )
+                    return
+
+                charge = self.battery_interface.getBatteryCharge()
+                crossed = charge < threshold if direction == "below" else charge > threshold
+                data = {
+                    "charge": charge,
+                    "unit": "percent",
+                    "threshold": threshold,
+                    "direction": direction,
+                    "condition": f"charge {comparison} {threshold}",
+                }
+
+                if crossed:
+                    await self._emit_task_status_to_subscribers(
+                        task_id=task_id,
+                        status="completed",
+                        tool="get_battery_charge",
+                        data=data,
+                        status_message=f"Battery charge is {charge:.1f}%, {direction} threshold {threshold:.1f}%",
+                        event="complete",
+                    )
+                    return
+
+                if timeout > 0 and time.monotonic() - start_time >= timeout:
+                    data["error"] = "timeout"
+                    await self._emit_task_status_to_subscribers(
+                        task_id=task_id,
+                        status="failed",
+                        tool="get_battery_charge",
+                        data=data,
+                        status_message=f"Battery monitor timed out after {timeout:.1f}s",
+                        event="timeout",
+                    )
+                    return
+
+                await asyncio.sleep(poll_interval)
+
+        except asyncio.CancelledError:
+            await self._emit_task_status_to_subscribers(
+                task_id=task_id,
+                status="cancelled",
+                tool="get_battery_charge",
+                data={
+                    "threshold": threshold,
+                    "direction": direction,
+                },
+                status_message="Battery charge monitor cancelled",
+                event="cancelled",
+            )
+            raise
+        except Exception as e:
+            logger.error(f"Battery charge monitor {task_id} failed: {e}")
+            await self._emit_task_status_to_subscribers(
+                task_id=task_id,
+                status="failed",
+                tool="get_battery_charge",
+                data={
+                    "threshold": threshold,
+                    "direction": direction,
+                    "error": str(e),
+                },
+                status_message=f"Battery monitor failed: {e}",
+                event="failed",
+            )
+        finally:
+            with self.notification_lock:
+                self.battery_monitor_tasks.pop(task_id, None)
+
     def _register_tools(self):
         """Register MCP tools"""
+
+        @self.mcp.tool()
+        async def subscribe_notifications(ctx: Context) -> dict[str, Any]:
+            """Subscribe this MCP session to server-side battery task notifications."""
+            session_key = self._register_notification_session(ctx.session)
+            return {
+                "success": True,
+                "session_key": session_key,
+                "message": "Subscribed to battery server task notifications"
+            }
 
         @self.mcp.tool()
         async def get_battery_voltage() -> dict[str, Any]:
@@ -150,6 +356,14 @@ class Yarp_mcpServer_IBattery:
             try:
                 charge = self.battery_interface.getBatteryCharge()
 
+                await self._emit_tool_snapshot(
+                    "get_battery_charge",
+                    {
+                        "charge": charge,
+                        "unit": "percent"
+                    }
+                )
+
                 return {
                     "success": True,
                     "charge": charge,
@@ -162,6 +376,93 @@ class Yarp_mcpServer_IBattery:
                     "success": False,
                     "error": f"Failed to get charge: {str(e)}"
                 }
+
+        @self.mcp.tool()
+        async def start_battery_charge_monitor(
+            threshold: float,
+            direction: str = "below",
+            poll_interval: float = 1.0,
+            timeout: float = 0.0,
+        ) -> dict[str, Any]:
+            """Start a server-side task that notifies when battery charge crosses a threshold.
+
+            direction must be "below" or "above". A timeout of 0 disables timeout.
+            Notifications are sent as MCP notifications/tasks/status messages to
+            subscribed clients.
+            """
+            if self.battery_interface is None:
+                return {
+                    "success": False,
+                    "error": "YARP battery not initialized. Call initialize_yarp first."
+                }
+
+            direction_normalized = direction.lower().strip()
+            aliases = {
+                "under": "below",
+                "less": "below",
+                "low": "below",
+                "over": "above",
+                "greater": "above",
+                "high": "above",
+            }
+            direction_normalized = aliases.get(direction_normalized, direction_normalized)
+            if direction_normalized not in {"below", "above"}:
+                return {
+                    "success": False,
+                    "error": "direction must be 'below' or 'above'"
+                }
+
+            if poll_interval <= 0:
+                return {
+                    "success": False,
+                    "error": "poll_interval must be positive"
+                }
+
+            if timeout < 0:
+                return {
+                    "success": False,
+                    "error": "timeout cannot be negative"
+                }
+
+            task_id = self._new_task_id("battery_charge")
+            task = asyncio.create_task(
+                self._battery_charge_monitor_loop(
+                    task_id=task_id,
+                    threshold=threshold,
+                    direction=direction_normalized,
+                    poll_interval=poll_interval,
+                    timeout=timeout,
+                )
+            )
+            with self.notification_lock:
+                self.battery_monitor_tasks[task_id] = task
+
+            comparison = "<" if direction_normalized == "below" else ">"
+            return {
+                "success": True,
+                "task_id": task_id,
+                "condition": f"charge {comparison} {threshold}",
+                "message": f"Started server-side battery monitor {task_id}"
+            }
+
+        @self.mcp.tool()
+        async def stop_battery_charge_monitor(task_id: str) -> dict[str, Any]:
+            """Cancel a server-side battery charge monitor."""
+            with self.notification_lock:
+                task = self.battery_monitor_tasks.get(task_id)
+
+            if task is None:
+                return {
+                    "success": False,
+                    "error": f"Battery monitor {task_id} not found"
+                }
+
+            task.cancel()
+            return {
+                "success": True,
+                "task_id": task_id,
+                "message": f"Battery monitor {task_id} cancellation requested"
+            }
 
         @self.mcp.tool()
         async def get_battery_temperature() -> dict[str, Any]:
@@ -212,6 +513,14 @@ class Yarp_mcpServer_IBattery:
                 }
 
                 status_str = status_map.get(status, f"UNKNOWN_STATUS_{status}")
+
+                await self._emit_tool_snapshot(
+                    "get_battery_status",
+                    {
+                        "status": status_str,
+                        "status_code": status
+                    }
+                )
 
                 return {
                     "success": True,
@@ -346,6 +655,14 @@ class Yarp_mcpServer_IBattery:
             try:
                 cleanup_status = []
 
+                with self.notification_lock:
+                    monitor_tasks = list(self.battery_monitor_tasks.values())
+                    self.battery_monitor_tasks.clear()
+                for task in monitor_tasks:
+                    task.cancel()
+                if monitor_tasks:
+                    cleanup_status.append(f"Cancelled {len(monitor_tasks)} battery monitor task(s)")
+
                 if self.device_driver:
                     self.device_driver.close()
                     cleanup_status.append("Device driver closed")
@@ -373,6 +690,23 @@ class Yarp_mcpServer_IBattery:
 
         # Start YARP RPC info port in a background thread
         self._start_info_port()
+
+    def _build_system_prompt_addendum(self) -> str:
+        """Build prompt guidance for clients that consume server instructions."""
+        return """
+BATTERY SERVER INSTRUCTIONS:
+
+When the user asks to be notified when battery charge goes below or above a
+threshold, prefer the server-side MCP notification tool:
+  - start_battery_charge_monitor(threshold, direction, poll_interval, timeout)
+
+Examples:
+  - "Tell me when battery is below 20%" -> start_battery_charge_monitor(20, "below")
+  - "Tell me when battery is above 80%" -> start_battery_charge_monitor(80, "above")
+
+The monitor sends notifications/tasks/status MCP notifications when the threshold
+condition is reached. Use get_battery_charge() for one-shot battery reads.
+"""
 
     def _start_info_port(self):
         """Start YARP RPC port for tool information"""
@@ -413,7 +747,7 @@ class Yarp_mcpServer_IBattery:
                                 self.info_port.reply(reply)
                             elif "get_system_prompt_addendum" in cmd_str:
                                 # Return the system prompt addendum
-                                reply.addString("NOT_IMPLEMENTED")
+                                reply.addString(self.system_prompt_addendum)
                                 self.info_port.reply(reply)
                     except Exception as e:
                         logger.debug(f"RPC port error: {e}")
@@ -431,6 +765,12 @@ class Yarp_mcpServer_IBattery:
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.info_port_running = False
+        with self.notification_lock:
+            monitor_tasks = list(self.battery_monitor_tasks.values())
+            self.battery_monitor_tasks.clear()
+        for task in monitor_tasks:
+            task.cancel()
+
         if self.info_port:
             try:
                 self.info_port.close()
