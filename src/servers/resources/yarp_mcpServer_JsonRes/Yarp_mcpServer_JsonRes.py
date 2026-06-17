@@ -25,15 +25,25 @@ class Yarp_mcpServer_JsonRes:
         self.json_file_path = None
         self.data: Dict[str, Any] = {}
 
+        json_file_name = "tours-with-italian-dates-in-chars.json"
+        json_file_context = "test_servers"
+
         if config:
             if config.check("json_file"):
-                self.json_file_path = config.find("json_file").asString()
+                json_file_name = config.find("json_file").asString()
+            if config.check("json_context"):
+                json_file_context = config.find("json_context").asString()
             if config.check("mcp_host"):
                 self.base_url = config.find("mcp_host").asString()
             if config.check("mcp_port"):
                 self.mcp_port = config.find("mcp_port").asInt16()
 
         self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
+
+        # Construct the full path to the JSON file
+        jsonFinder = yarp.ResourceFinder()
+        jsonFinder.setDefaultContext(json_file_context)
+        self.json_file_path = jsonFinder.findFileByName(json_file_name).asString()
 
         # Initialize the JSON data
         if self.json_file_path:
