@@ -43,7 +43,7 @@ class Yarp_mcpServer_JsonRes:
         # Construct the full path to the JSON file
         jsonFinder = yarp.ResourceFinder()
         jsonFinder.setDefaultContext(json_file_context)
-        self.json_file_path = jsonFinder.findFileByName(json_file_name).asString()
+        self.json_file_path = jsonFinder.findFileByName(json_file_name)
 
         # Initialize the JSON data
         if self.json_file_path:
