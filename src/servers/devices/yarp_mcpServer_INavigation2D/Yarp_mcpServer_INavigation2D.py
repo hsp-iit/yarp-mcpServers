@@ -1474,62 +1474,6 @@ Example Relative Navigation:
   → Response: "Moving forward 2 meters with monitoring enabled. I'll notify you when complete."
 ═════════════════════════════════════════════════════════════════════════════════"""
 
-
-    def _start_info_port(self):
-        """Start YARP RPC port for tool information"""
-        try:
-            # Initialize YARP network if not already done
-            if not yarp.Network.checkNetwork():
-                yarp.Network.init()
-
-            # Create and open the RPC port
-            self.info_port = yarp.RpcServer()
-            port_name = "/mcp_server/navigation/info:o"
-
-            if not self.info_port.open(port_name):
-                logger.warning(f"Failed to open info port {port_name}")
-                self.info_port = None
-                return
-
-            logger.info(f"Opened YARP info port at {port_name}")
-            self.info_port_running = True
-
-            # Start listening for RPC commands in a background thread
-            def rpc_loop():
-                while self.info_port_running:
-                    try:
-                        cmd = yarp.Bottle()
-                        reply = yarp.Bottle()
-
-                        if self.info_port.read(cmd, True):
-                            cmd_str = cmd.toString()
-                            print(f"Received RPC command: {cmd_str}")
-
-                            if "get_name" in cmd_str:
-                                # Return the server name
-                                reply.addString(self.server_name)
-                                self.info_port.reply(reply)
-                            elif "get_mcp_url" in cmd_str:
-                                # Return the MCP server URL
-                                reply.addString(self.mcp_url)
-                                self.info_port.reply(reply)
-                            elif "get_system_prompt_addendum" in cmd_str:
-                                # Return the system prompt addendum
-                                reply.addString(self.system_prompt_addendum)
-                                self.info_port.reply(reply)
-                    except Exception as e:
-                        logger.debug(f"RPC port error: {e}")
-
-                    # Small sleep to prevent busy waiting
-                    time.sleep(0.01)
-
-            # Start the background thread as a daemon
-            rpc_thread = threading.Thread(target=rpc_loop, daemon=True)
-            rpc_thread.start()
-
-        except Exception as e:
-            logger.error(f"Error starting info port: {e}")
-
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.info_port_running = False
@@ -1558,14 +1502,7 @@ Example Relative Navigation:
             except Exception as e:
                 logger.warning(f"Error during cleanup: {e}")
 
-    def run(self, host: str = None, port: int = None):
-        """
-        Run the MCP server using uvicorn.
-        """
-        # Initialize YARP network
-        yarp.Network.init()
-        self.yarp_network = yarp.Network()
-
+    def _initialize(self):
         # Check if YARP server is running
         if not self.yarp_network.checkNetwork():
             logger.error("YARP network not available. Please start yarpserver.")
@@ -1594,17 +1531,6 @@ Example Relative Navigation:
 
         self.is_initialized = True
 
-        host_i = host if host else self.base_url
-        port_i = port if port else self.mcp_port
-        try:
-            logger.info(f"Starting YARP Navigation MCP Server on {host_i}:{port_i}")
-            # Get the ASGI app from FastMCP
-            asgi_app = self.mcp.streamable_http_app()
-            # Run the app with uvicorn
-            uvicorn.run(asgi_app, host=host_i, port=port_i)
-        except Exception as e:
-            logger.error(f"Server error: {e}")
-            sys.exit(1)
 
 if __name__ == "__main__":
     config = yarp.ResourceFinder()
