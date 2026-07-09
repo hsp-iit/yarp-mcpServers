@@ -22,20 +22,6 @@ import argparse
 from ...lib_server.YARP_mcpServer_DeviceBase import Yarp_mcpServer_DeviceBase
 from ...lib_server.YARP_mcpServer_Notifier import Yarp_mcpServer_Notifier
 
-# MCP imports
-from mcp.server.fastmcp import FastMCP, Context
-from mcp.server.models import InitializationOptions
-from mcp.types import (
-    Resource,
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel,
-    ServerNotification,
-    TaskStatusNotification,
-    TaskStatusNotificationParams
-)
 
 # Try to import YARP
 try:
@@ -53,23 +39,23 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase, Yarp_mcpServer_Notifier
     """YARP Battery MCP Server"""
 
     def __init__(self, conf=None):
-        Yarp_mcpServer_DeviceBase.__init__(self, conf)
         Yarp_mcpServer_Notifier.__init__(self)
         self.mcp = FastMCP("YARP Battery Server")
         self.server_name = "battery"
-        self.device_name = "battery_nwc_yarp"
-        self.remote_port = "/battery_nws_yarp"
-        self.local_port = "/battery_nwc_yarp"
+        device_name = "battery_nwc_yarp"
+        remote_port = "/battery_nws_yarp"
+        local_port = "/battery_nwc_yarp"
 
         if conf:
-            if conf.check("yarp_device"):
-                self.device_name = conf.find("yarp_device").asString()
-            if conf.check("yarp_remote"):
-                self.remote_port = conf.find("yarp_remote").asString()
-            if conf.check("yarp_local"):
-                self.local_port = conf.find("yarp_local").asString()
+            if not conf.check("yarp_device"):
+                conf.setDefault("yarp_device", device_name)
+            if not conf.check("yarp_remote"):
+                conf.setDefault("yarp_remote", remote_port)
+            if not conf.check("yarp_local"):
+                conf.setDefault("yarp_local", local_port)
+
+        Yarp_mcpServer_DeviceBase.__init__(self, conf)
         self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
-        self.system_prompt_addendum = self._build_system_prompt_addendum()
 
         # Register tools
         self._register_tools()
@@ -620,60 +606,6 @@ The monitor sends notifications/tasks/status MCP notifications when the threshol
 condition is reached. Use get_battery_charge() for one-shot battery reads.
 """
 
-    def _start_info_port(self):
-        """Start YARP RPC port for tool information"""
-        try:
-            # Initialize YARP network if not already done
-            if not yarp.Network.checkNetwork():
-                yarp.Network.init()
-
-            # Create and open the RPC port
-            self.info_port = yarp.RpcServer()
-            port_name = "/mcp_server/battery/info:o"
-
-            if not self.info_port.open(port_name):
-                logger.warning(f"Failed to open info port {port_name}")
-                self.info_port = None
-                return
-
-            logger.info(f"Opened YARP info port at {port_name}")
-            self.info_port_running = True
-
-            # Start listening for RPC commands in a background thread
-            def rpc_loop():
-                while self.info_port_running:
-                    try:
-                        cmd = yarp.Bottle()
-                        reply = yarp.Bottle()
-
-                        if self.info_port.read(cmd, True):
-                            cmd_str = cmd.toString()
-                            print(f"Received RPC command: {cmd_str}")
-                            if "get_name" in cmd_str:
-                                # Return the server name
-                                reply.addString(self.server_name)
-                                self.info_port.reply(reply)
-                            elif "get_mcp_url" in cmd_str:
-                                # Return the MCP server URL
-                                reply.addString(self.mcp_url)
-                                self.info_port.reply(reply)
-                            elif "get_system_prompt_addendum" in cmd_str:
-                                # Return the system prompt addendum
-                                reply.addString(self.system_prompt_addendum)
-                                self.info_port.reply(reply)
-                    except Exception as e:
-                        logger.debug(f"RPC port error: {e}")
-
-                    # Small sleep to prevent busy waiting
-                    time.sleep(0.01)
-
-            # Start the background thread as a daemon
-            rpc_thread = threading.Thread(target=rpc_loop, daemon=True)
-            rpc_thread.start()
-
-        except Exception as e:
-            logger.error(f"Error starting info port: {e}")
-
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.info_port_running = False
@@ -698,42 +630,14 @@ condition is reached. Use get_battery_charge() for one-shot battery reads.
             except:
                 pass
 
-    def run(self, host: str = None, port: int = None):
-        """
-        Run the MCP server using FastMCP's built-in server.
-        """
-
-        # Create PolyDriver for battery
-        options = yarp.Property()
-        options.put("device",  self.device_name)
-        options.put("remote", self.remote_port)
-        options.put("local", self.local_port)
-
-        self.device_driver = yarp.PolyDriver(options)
-
-        if not self.device_driver.isValid():
-            logger.error(f"Failed to create {self.device_name} device. Check if the device is available.")
-            return
-
-        self.battery_interface = self.device_driver.viewIBattery()
+    def _interfaceView(self, devDriver):
+        self.battery_interface = devDriver.viewIBattery()
 
         if self.battery_interface is None:
             logger.error(f"Failed to view IBattery interface for {self.device_name}.")
-            return
+            return False
 
-        host_i = host if host else self.base_url
-        port_i = port if port else self.mcp_port
-        try:
-            import uvicorn
-            # Get the ASGI app from FastMCP
-            asgi_app = self.mcp.streamable_http_app()
-
-            # Run the app directly without mounting
-            logger.info(f"Starting YARP Battery MCP Server on {host_i}:{port_i}")
-            uvicorn.run(asgi_app, host=host_i, port=port_i)
-        except Exception as e:
-            logger.exception("Failed to run MCP server: %s", e)
-            raise
+        return True
 
 if __name__ == "__main__":
     config = yarp.ResourceFinder()
