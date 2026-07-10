@@ -20,21 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
-# MCP imports
-from mcp.server.fastmcp import FastMCP, Context
-from mcp.server.models import InitializationOptions
-import uvicorn
-from mcp.types import (
-    Resource,
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel,
-    ServerNotification,
-    TaskStatusNotification,
-    TaskStatusNotificationParams
-)
+from ...lib_server.YARP_mcpServer_DeviceBase import *
 
 # Try to import YARP
 try:
@@ -47,11 +33,11 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class Yarp_mcpServer_INavigation2D:
+class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
     """MCP Server for YARP INavigation2D, ILocalization2D, and IMap2D interfaces (Streamable HTTP)"""
 
     def __init__(self, conf=None):
-        self.mcp = FastMCP("YARP Navigation Server")
+        Yarp_mcpServer_DeviceBase.__init__(self, conf)
         self.yarp_network = None
         self.device_driver = None
         self.navigation_interface = None

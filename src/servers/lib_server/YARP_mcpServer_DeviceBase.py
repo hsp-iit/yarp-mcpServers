@@ -2,14 +2,14 @@
 Base class for yarp device based YARP_mcpServer. This class is used to create a server that can communicate with YARP clients.
 """
 
-from .YARP_mcpServer_Base import *
+from .YARP_mcpServer_Notifier import *
 
-class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Base):
+class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
     """Abstract Base class for device related Yarp_mcpServer"""
 
     @abstractmethod
     def __init__(self, conf:yarp.ResourceFinder=None):
-        Yarp_mcpServer_Base.__init__(self, conf)
+        Yarp_mcpServer_Notifier.__init__(self, conf)
         self.device_driver = None
 
         self.driver_options = yarp.Property()

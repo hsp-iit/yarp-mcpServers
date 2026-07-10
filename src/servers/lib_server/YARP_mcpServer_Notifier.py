@@ -1,10 +1,10 @@
-from abc import ABC, abstractmethod
-import threading
 import threading
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Sequence
-import logging
+from typing import Any, Sequence, TypeVar
+from collections.abc import Callable
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 # MCP imports
 from mcp.server.fastmcp import FastMCP, Context
@@ -17,13 +17,12 @@ from mcp.types import (
     TaskStatusNotificationParams
 )
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from .YARP_mcpServer_Base import *
 
-class Yarp_mcpServer_Notifier(ABC):
+class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
 
-    def __init__(self):
+    def __init__(self, conf:yarp.ResourceFinder=None):
+        Yarp_mcpServer_Base.__init__(self, conf)
         # Notification infrastructure for MCP streaming.
         # Clients subscribe with subscribe_notifications(); monitoring tasks then
         # broadcast official notifications/tasks/status messages to those sessions.
@@ -31,6 +30,69 @@ class Yarp_mcpServer_Notifier(ABC):
         self.notification_lock = threading.Lock()
         self.task_counter = 0
         self.task_created_at = {}
+
+
+    def notification_tool(
+        self,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        notification_kind: str = "task_status",
+        notification_method: str = "notifications/tasks/status",
+        requires_subscription: bool = True,
+        meta: dict[str, Any] | None = None,
+        **tool_kwargs: Any,
+    ) -> Callable[[F], F]:
+        """
+        Register a tool that may emit server-side notifications.
+
+        This only advertises notification capability in tools/list.
+        The tool itself must still call _emit_task_status_to_subscribers(...)
+        or another notification helper.
+        """
+        merged_meta = {
+            **(meta or {}),
+            "x-yarp/emitsNotifications": True,
+            "x-yarp/notificationKind": notification_kind,
+            "x-yarp/notificationMethod": notification_method,
+            "x-yarp/requiresSubscription": requires_subscription,
+        }
+
+        return self.mcp.tool(
+            name=name,
+            description=description,
+            meta=merged_meta,
+            **tool_kwargs,
+        )
+
+
+    def progress_tool(
+        self,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        meta: dict[str, Any] | None = None,
+        **tool_kwargs: Any,
+    ) -> Callable[[F], F]:
+        """
+        Register an MCP tool that may emit request-scoped MCP progress
+        notifications through ctx.report_progress(...).
+
+        This does not itself send progress. It only advertises the capability
+        in tools/list and delegates normal registration to FastMCP.tool().
+        """
+        merged_meta = {
+            **(meta or {}),
+            "x-yarp/emitsProgress": True,
+            "x-yarp/progressNotificationMethod": "notifications/progress",
+        }
+
+        return self.mcp.tool(
+            name=name,
+            description=description,
+            meta=merged_meta,
+            **tool_kwargs,
+        )
 
 
     def _new_task_id(self, prefix: str) -> str:

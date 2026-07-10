@@ -19,9 +19,7 @@ import time
 import argparse
 
 
-from ...lib_server.YARP_mcpServer_DeviceBase import Yarp_mcpServer_DeviceBase
-from ...lib_server.YARP_mcpServer_Notifier import Yarp_mcpServer_Notifier
-
+from ...lib_server.YARP_mcpServer_DeviceBase import *
 
 # Try to import YARP
 try:
@@ -35,12 +33,10 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase, Yarp_mcpServer_Notifier):
+class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
     """YARP Battery MCP Server"""
 
     def __init__(self, conf=None):
-        Yarp_mcpServer_Notifier.__init__(self)
-        self.mcp = FastMCP("YARP Battery Server")
         self.server_name = "battery"
         device_name = "battery_nwc_yarp"
         remote_port = "/battery_nws_yarp"
@@ -55,7 +51,6 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase, Yarp_mcpServer_Notifier
                 conf.setDefault("yarp_local", local_port)
 
         Yarp_mcpServer_DeviceBase.__init__(self, conf)
-        self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
 
         # Register tools
         self._register_tools()
@@ -237,13 +232,6 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase, Yarp_mcpServer_Notifier
         async def get_battery_charge() -> dict[str, Any]:
             """
             Get the battery charge level (state of charge) as a percentage (0-100%).
-            x-monitoring metadata:
-            {
-                "pollable": true,
-                "expected_fields": ["charge"],
-                "suggested_conditions": ["charge < 20"],
-                "polling_suggestion": "1.0 second"
-            }
             """
             if self.battery_interface is None:
                 return {
@@ -254,13 +242,13 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase, Yarp_mcpServer_Notifier
             try:
                 charge = self.battery_interface.getBatteryCharge()
 
-                await self._emit_tool_snapshot(
-                    "get_battery_charge",
-                    {
-                        "charge": charge,
-                        "unit": "percent"
-                    }
-                )
+                # await self._emit_tool_snapshot(
+                #     "get_battery_charge",
+                #     {
+                #         "charge": charge,
+                #         "unit": "percent"
+                #     }
+                # )
 
                 return {
                     "success": True,
@@ -275,19 +263,19 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase, Yarp_mcpServer_Notifier
                     "error": f"Failed to get charge: {str(e)}"
                 }
 
-        @self.mcp.tool()
+        @self.notification_tool(
+                description="Start a server-side task that notifies when battery charge crosses a threshold. Direction must be \"below\" or \"above\". A timeout of 0 disables timeout. Notifications are sent as MCP notifications/tasks/status messages to subscribed clients.",
+                notification_kind="subscription",
+                notification_method="notifications/tasks/status",
+                requires_subscription=False,
+        )
         async def start_battery_charge_monitor(
             threshold: float,
             direction: str = "below",
             poll_interval: float = 1.0,
             timeout: float = 0.0,
         ) -> dict[str, Any]:
-            """Start a server-side task that notifies when battery charge crosses a threshold.
 
-            direction must be "below" or "above". A timeout of 0 disables timeout.
-            Notifications are sent as MCP notifications/tasks/status messages to
-            subscribed clients.
-            """
             if self.battery_interface is None:
                 return {
                     "success": False,
