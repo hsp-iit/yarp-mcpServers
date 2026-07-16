@@ -39,7 +39,6 @@ class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
         description: str | None = None,
         notification_kind: str = "task_status",
         notification_method: str = "notifications/tasks/status",
-        requires_subscription: bool = True,
         meta: dict[str, Any] | None = None,
         **tool_kwargs: Any,
     ) -> Callable[[F], F]:
@@ -54,8 +53,7 @@ class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
             **(meta or {}),
             "x-yarp/emitsNotifications": True,
             "x-yarp/notificationKind": notification_kind,
-            "x-yarp/notificationMethod": notification_method,
-            "x-yarp/requiresSubscription": requires_subscription,
+            "x-yarp/notificationMethod": notification_method
         }
 
         return self.mcp.tool(
