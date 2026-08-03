@@ -37,17 +37,10 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
     """MCP Server for YARP INavigation2D, ILocalization2D, and IMap2D interfaces (Streamable HTTP)"""
 
     def __init__(self, conf=None):
-        Yarp_mcpServer_DeviceBase.__init__(self, conf)
         self.yarp_network = None
         self.device_driver = None
         self.navigation_interface = None
-        self.is_initialized = False
-        self.tool_descriptions = {}
-        self.info_port = None
-        self.info_port_running = False
-        self.server_name = "navigation"
-        self.base_url = "127.0.0.1"
-        self.mcp_port = 4002
+        self.navigation_monitor_tasks = {}
         self.device_name = "navigation2D_nwc_yarp"
         self.remote_port = "/navigation2D_nws_yarp"
         self.local_port = "/navigation2D_nwc_yarp"
@@ -56,68 +49,25 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
         self.localization_server = "/localization2D_nws_yarp"
 
         if conf:
-            # Handle both dict-like and object-like config
-            if hasattr(conf, 'check') and hasattr(conf, 'find'):
-                # YARP Property object
-                if conf.check("yarp_device"):
-                    self.device_name = conf.find("yarp_device").asString()
-                if conf.check("yarp_remote"):
-                    self.remote_port = conf.find("yarp_remote").asString()
-                if conf.check("yarp_local"):
-                    self.local_port = conf.find("yarp_local").asString()
-                if conf.check("navigation_server"):
-                    self.navigation_server = conf.find("navigation_server").asString()
-                if conf.check("map_locations_server"):
-                    self.map_locations_server = conf.find("map_locations_server").asString()
-                if conf.check("localization_server"):
-                    self.localization_server = conf.find("localization_server").asString()
-                if conf.check("mcp_host"):
-                    self.base_url = conf.find("mcp_host").asString()
-                if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt16()
-            elif isinstance(conf, dict):
-                # Dict-like config
-                self.device_name = conf.get("yarp_device", self.device_name)
-                self.remote_port = conf.get("yarp_remote", self.remote_port)
-                self.local_port = conf.get("yarp_local", self.local_port)
-                self.navigation_server = conf.get("navigation_server", self.navigation_server)
-                self.map_locations_server = conf.get("map_locations_server", self.map_locations_server)
-                self.localization_server = conf.get("localization_server", self.localization_server)
-                self.base_url = conf.get("mcp_host", self.base_url)
-                self.mcp_port = conf.get("mcp_port", self.mcp_port)
+            if not conf.check("device"):
+                conf.setDefault("device",self.device_name)
+            if not conf.check("local"):
+                conf.setDefault("local",self.local_port)
+            if not conf.check("navigation_server"):
+                conf.setDefault("navigation_server",self.navigation_server)
+            if not conf.check("map_locations_server"):
+                conf.setDefault("map_locations_server",self.map_locations_server)
+            if not conf.check("localization_server"):
+                conf.setDefault("localization_server",self.localization_server)
 
-        self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
-        self.system_prompt_addendum = self._build_system_prompt_addendum()
+        Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
-        # Notification infrastructure for MCP streaming.
-        # Clients subscribe with subscribe_notifications(); navigation monitor
-        # tasks then broadcast official notifications/tasks/status messages.
-        self.notification_sessions = {}
-        self.notification_lock = threading.Lock()
-        self.task_counter = 0
-        self.task_created_at = {}
-        self.navigation_monitor_tasks = {}
+        self.driver_options.put("navigation_server", conf.find("navigation_server").asString())
+        self.driver_options.put("map_locations_server", conf.find("map_locations_server").asString())
+        self.driver_options.put("localization_server", conf.find("localization_server").asString())
 
         # Register tools
         self._register_tools()
-
-    def _new_task_id(self, prefix: str) -> str:
-        """Generate a unique server-side monitoring task ID."""
-        with self.notification_lock:
-            self.task_counter += 1
-            return f"{prefix}_{self.task_counter}_{uuid.uuid4().hex[:8]}"
-
-    def _register_notification_session(self, session: Any) -> str:
-        """Remember a session that wants server-side task notifications."""
-        session_key = str(id(session))
-        with self.notification_lock:
-            self.notification_sessions[session_key] = session
-        return session_key
-
-    def _task_created_time(self, task_id: str) -> datetime:
-        """Return the original creation time for a task notification."""
-        with self.notification_lock:
-            return self.task_created_at.setdefault(task_id, datetime.now(timezone.utc))
 
     def _navigation_status_name(self, status: Any) -> str:
         """Convert a YARP navigation status enum into a stable string."""
@@ -134,81 +84,6 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
             yarp.navigation_status_error: 'error'
         }
         return status_names.get(int(status), f'unknown({int(status)})')
-
-    async def _emit_task_status_to_subscribers(
-        self,
-        task_id: str,
-        status: str,
-        tool: str,
-        data: dict[str, Any] | None = None,
-        status_message: str | None = None,
-        event: str | None = None,
-    ) -> None:
-        """Emit an official MCP task-status notification to subscribed sessions."""
-        created_at = self._task_created_time(task_id)
-        params = TaskStatusNotificationParams(
-            taskId=task_id,
-            status=status,
-            statusMessage=status_message,
-            createdAt=created_at,
-            lastUpdatedAt=datetime.now(timezone.utc),
-            ttl=None,
-            tool=tool,
-            event=event or status,
-            data=data or {},
-        )
-        notification = ServerNotification(TaskStatusNotification(params=params))
-
-        with self.notification_lock:
-            sessions = list(self.notification_sessions.items())
-
-        dead_sessions = []
-        for session_key, session in sessions:
-            try:
-                await session.send_notification(notification)
-            except Exception as e:
-                logger.debug(f"Failed to emit task notification to session {session_key}: {e}")
-                dead_sessions.append(session_key)
-
-        if dead_sessions:
-            with self.notification_lock:
-                for session_key in dead_sessions:
-                    self.notification_sessions.pop(session_key, None)
-
-    async def _emit_tool_snapshot(self, tool: str, data: dict[str, Any]) -> None:
-        """Broadcast a non-terminal snapshot from a synchronous getter tool."""
-        task_id = self._new_task_id(f"{tool}_snapshot")
-        await self._emit_task_status_to_subscribers(
-            task_id=task_id,
-            status="working",
-            tool=tool,
-            data=data,
-            status_message=f"{tool} status update",
-            event="status_changed",
-        )
-        with self.notification_lock:
-            self.task_created_at.pop(task_id, None)
-
-    def _start_navigation_monitor(
-        self,
-        task_id: str,
-        command_tool: str,
-        target_data: dict[str, Any],
-        poll_interval: float = 1.0,
-        timeout: float = 300.0,
-    ) -> None:
-        """Start a background task that notifies when navigation reaches a terminal state."""
-        task = asyncio.create_task(
-            self._navigation_monitor_loop(
-                task_id=task_id,
-                command_tool=command_tool,
-                target_data=target_data,
-                poll_interval=poll_interval,
-                timeout=timeout,
-            )
-        )
-        with self.notification_lock:
-            self.navigation_monitor_tasks[task_id] = task
 
     async def _navigation_monitor_loop(
         self,
@@ -355,6 +230,34 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                 "message": "Subscribed to navigation server task notifications"
             }
 
+        @self.notification_tool(
+                description="Start a background task that notifies when navigation reaches a terminal state.",
+                notification_kind="subscription",
+                notification_method="notifications/tasks/status",
+                requires_subscription=False,
+        )
+        async def _start_navigation_monitor(
+                self,
+                task_id: str,
+                command_tool: str,
+                target_data: dict[str, Any],
+                poll_interval: float = 1.0,
+                timeout: float = 300.0,
+            ) -> None:
+                task = asyncio.create_task(
+                    self._navigation_monitor_loop(
+                        task_id=task_id,
+                        command_tool=command_tool,
+                        target_data=target_data,
+                        poll_interval=poll_interval,
+                        timeout=timeout,
+                    )
+                )
+                with self.notification_lock:
+                    self.navigation_monitor_tasks[task_id] = task
+
+
+        # ===================== NAVIGATION TOOLS =====================
         @self.mcp.tool()
         async def goto_target_by_absolute_location(x: float, y: float, theta: float) -> dict[str, Any]:
             """Navigate the robot to an absolute location in the map. Coordinates are in meters and theta is in degrees."""
@@ -687,68 +590,6 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "success": False,
                     "error": f"Resume error: {str(e)}"
                 }
-
-        # @self.mcp.tool()
-        # async def apply_velocity_command(x_vel: float, y_vel: float, theta_vel: float, timeout: float = 0.1) -> dict[str, Any]:
-        #     """Apply a velocity command to the robot. x_vel and y_vel in m/s, theta_vel in deg/s."""
-        #     if not self.is_initialized:
-        #         return {
-        #             "success": False,
-        #             "error": "Navigation system not initialized. Call initialize_yarp_navigation first."
-        #         }
-        #
-        #     try:
-        #         result = self.navigation_interface.applyVelocityCommand(x_vel, y_vel, theta_vel, timeout)
-        #
-        #         return {
-        #             "success": bool(result),
-        #             "x_velocity": x_vel,
-        #             "y_velocity": y_vel,
-        #             "theta_velocity": theta_vel,
-        #             "timeout": timeout,
-        #             "message": "Velocity command applied" if result else "Failed to apply velocity command"
-        #         }
-        #     except Exception as e:
-        #         logger.error(f"Error in apply_velocity_command: {e}")
-        #         return {
-        #             "success": False,
-        #             "error": f"Velocity command error: {str(e)}"
-        #         }
-
-        # @self.mcp.tool()
-        # async def get_last_velocity_command() -> dict[str, Any]:
-        #     """Get the last applied velocity command."""
-        #     if not self.is_initialized:
-        #         return {
-        #             "success": False,
-        #             "error": "Navigation system not initialized. Call initialize_yarp_navigation first."
-        #         }
-        #
-        #     try:
-        #         x_vel = yarp.DVector(1)
-        #         y_vel = yarp.DVector(1)
-        #         theta_vel = yarp.DVector(1)
-        #
-        #         result = self.navigation_interface.getLastVelocityCommand(x_vel, y_vel, theta_vel)
-        #
-        #         if result:
-        #             return {
-        #                 "success": True,
-        #                 "x_velocity": float(x_vel[0]),
-        #                 "y_velocity": float(y_vel[0]),
-        #                 "theta_velocity": float(theta_vel[0])
-        #             }
-        #         else:
-        #             return {
-        #                 "success": False,
-        #                 "error": "Failed to get last velocity command"
-        #             }
-        #     except Exception as e:
-        #         logger.error(f"Error in get_last_velocity_command: {e}")
-        #         return {
-        #             "success": False,
-        #             "error": f"Velocity query error: {str(e)}"
-        #         }
 
         @self.mcp.tool()
         async def get_absolute_target_location() -> dict[str, Any]:
@@ -1475,7 +1316,7 @@ Example Relative Navigation:
             except Exception as e:
                 logger.warning(f"Error closing info port: {e}")
 
-        if self.is_initialized:
+        if self.navigation_interface:
             try:
                 if self.device_driver:
                     self.device_driver.close()
@@ -1488,38 +1329,21 @@ Example Relative Navigation:
             except Exception as e:
                 logger.warning(f"Error during cleanup: {e}")
 
-    def _initialize(self):
-        # Check if YARP server is running
-        if not self.yarp_network.checkNetwork():
-            logger.error("YARP network not available. Please start yarpserver.")
-            return
-
-        # Create PolyDriver for navigation
-        options = yarp.Property()
-        options.put("device", self.device_name)
-        options.put("navigation_server", self.navigation_server)
-        options.put("map_locations_server", self.map_locations_server)
-        options.put("localization_server", self.localization_server)
-        options.put("local", self.local_port)
-
-        self.device_driver = yarp.PolyDriver(options)
-
-        if not self.device_driver.isValid():
-            logger.error(f"Failed to create {self.device_name} device. Check if the device is available.")
-            return
+    def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool:
 
         # Get INavigation2D interface
-        self.navigation_interface = self.device_driver.viewINavigation2D()
+        self.navigation_interface = devDriver.viewINavigation2D()
 
         if self.navigation_interface is None:
             logger.error("Failed to get INavigation2D interface")
-            return
+            return False
 
-        self.is_initialized = True
+        return True
 
 
 if __name__ == "__main__":
     config = yarp.ResourceFinder()
     config.configure(sys.argv)
+
     server = Yarp_mcpServer_INavigation2D(config)
     server.run()
