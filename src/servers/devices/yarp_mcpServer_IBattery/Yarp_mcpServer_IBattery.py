@@ -37,18 +37,20 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
     """YARP Battery MCP Server"""
 
     def __init__(self, conf=None):
+        self.battery_interface = None
+        self.battery_monitor_tasks = {}
         self.server_name = "battery"
         device_name = "battery_nwc_yarp"
         remote_port = "/battery_nws_yarp"
         local_port = "/battery_nwc_yarp"
 
         if conf:
-            if not conf.check("yarp_device"):
-                conf.setDefault("yarp_device", device_name)
-            if not conf.check("yarp_remote"):
-                conf.setDefault("yarp_remote", remote_port)
-            if not conf.check("yarp_local"):
-                conf.setDefault("yarp_local", local_port)
+            if not conf.check("device"):
+                conf.setDefault("device", device_name)
+            if not conf.check("remote"):
+                conf.setDefault("remote", remote_port)
+            if not conf.check("local"):
+                conf.setDefault("local", local_port)
 
         Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
