@@ -17,15 +17,15 @@ class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
         if conf:
             # YARP Property object
             if conf.check("yarp_device"):
-                self.driver_options.put("device", conf.find("yarp_device").asString())
+                self.driver_options.put("device", conf.find("device").asString())
             else:
-                raise MissingParameterError("yarp_device")
-            if conf.check("yarp_remote"):
-                self.driver_options.put("remote", conf.find("yarp_remote").asString())
-            if conf.check("yarp_local"):
-                self.driver_options.put("local", conf.find("yarp_local").asString())
+                raise MissingParameterError("device")
+            if conf.check("remote"):
+                self.driver_options.put("remote", conf.find("remote").asString())
+            if conf.check("local"):
+                self.driver_options.put("local", conf.find("local").asString())
             else:
-                raise MissingParameterError("yarp_local")
+                raise MissingParameterError("local")
 
     @abstractmethod
     def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool :
