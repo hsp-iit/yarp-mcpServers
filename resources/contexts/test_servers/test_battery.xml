@@ -3,9 +3,9 @@
 <robot name="mcpBatteryTest" prefix="batteryServer" portprefix="/batteryServer" xmlns:xi="http://www.w3.org/2001/XInclude">
     <devices>
         <device xmlns:xi="http://www.w3.org/2001/XInclude"  name="batteryTest" type="Yarp_mcpServer_IBattery">
-           <param name="yarp_device" extern-name="battery_yarp_device">battery_nwc_yarp</param>
-           <param name="yarp_remote" extern-name="battery_yarp_remote">/battery_nws</param>
-           <param name="yarp_local" extern-name="battery_yarp_local">/battery_nwc</param>
+           <param name="device" extern-name="battery_yarp_device">battery_nwc_yarp</param>
+           <param name="remote" extern-name="battery_yarp_remote">/battery_nws</param>
+           <param name="local" extern-name="battery_yarp_local">/battery_nwc</param>
         </device>
     </devices>
 </robot>
