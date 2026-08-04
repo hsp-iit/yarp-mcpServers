@@ -14,17 +14,7 @@ import threading
 import time
 import argparse
 
-# MCP imports
-from mcp.server.fastmcp import FastMCP
-from mcp.server.models import InitializationOptions
-from mcp.types import (
-    Resource,
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel
-)
+from ...lib_server.YARP_mcpServer_Base import *
 
 # Try to import YARP
 try:
@@ -37,54 +27,27 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class Yarp_mcpServer_WakeWordRPC:
+class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
     """YARP WakeWord RPC MCP Server"""
 
     def __init__(self, conf=None):
-        self.mcp = FastMCP("YARP WakeWord RPC Server")
-        self.yarp_network = None
-        self.device_driver = None
-        self.speech_interface = None
-        self.is_initialized = False
         self.autoconnect = True
-        self.tool_descriptions = {}
-        self.info_port = None
-        self.info_port_running = False
         self.server_name = "wake_word"
-        self.base_url = "127.0.0.1"
-        self.mcp_port = 4005
         self.local_port_name = "/mcp_ww/rpc:o"
         self.remote_port_name = "/wake/rpc:i"
         self.local_port = None
 
         if conf:
-            # Handle both dict-like and object-like config
-            if hasattr(conf, 'check') and hasattr(conf, 'find'):
-                # YARP Property object
-                if conf.check("yarp_remote"):
-                    self.remote_port_name = conf.find("yarp_remote").asString()
-                if conf.check("yarp_local"):
-                    self.local_port_name = conf.find("yarp_local").asString()
-                if conf.check("mcp_host"):
-                    self.base_url = conf.find("mcp_host").asString()
-                if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt16()
-                if conf.check("autoconnect"):
-                    self.autoconnect = conf.find("autoconnect").asInt8() != 0
-            elif isinstance(conf, dict):
-                # Dict-like config
-                self.remote_port_name = conf.get("yarp_remote", self.remote_port)
-                self.local_port_name = conf.get("yarp_local", self.local_port)
-                self.base_url = conf.get("mcp_host", self.base_url)
-                self.mcp_port = conf.get("mcp_port", self.mcp_port)
+            if conf.check("remote"):
+                self.remote_port_name = conf.find("remote").asString()
+            if conf.check("local"):
+                self.local_port_name = conf.find("local").asString()
+            if conf.check("autoconnect"):
+                self.autoconnect = conf.find("autoconnect").asInt8() != 0
 
-        self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
-        self.system_prompt_addendum = self._build_system_prompt_addendum()
+        Yarp_mcpServer_Base.__init__(self, conf)
 
-        # Register tools
-        self._register_tools()
-
-    def _register_tools(self):
+    def _register_internal_tools(self):
         """Register MCP tools"""
 
         @self.mcp.tool()
@@ -167,65 +130,6 @@ System Prompt Addendum:
   If the intention of the user is to stop talking to you and they will not talk again, call the stop tool.
 """
 
-    def _start_info_port(self):
-        """Start YARP RPC port for tool information"""
-        try:
-            # Initialize YARP network if not already done
-            if not yarp.Network.checkNetwork():
-                yarp.Network.init()
-
-            # Create and open the RPC port
-            self.info_port = yarp.RpcServer()
-            port_name = "/mcp_server/wakeword/info:o"
-
-            if not self.info_port.open(port_name):
-                logger.warning(f"Failed to open info port {port_name}")
-                self.info_port = None
-                return
-
-            logger.info(f"Opened YARP info port at {port_name}")
-            self.info_port_running = True
-
-            # Start listening for RPC commands in a background thread
-            def rpc_loop():
-                while self.info_port_running:
-                    try:
-                        cmd = yarp.Bottle()
-                        reply = yarp.Bottle()
-
-                        if self.info_port.read(cmd, True):
-                            cmd_str = cmd.toString()
-                            print(f"Received RPC command: {cmd_str}")
-
-                            if "get_description" in cmd_str:
-                                # Return all tool descriptions as JSON
-                                reply.addString(json.dumps(self.tool_descriptions))
-                                self.info_port.reply(reply)
-                            elif "get_name" in cmd_str:
-                                # Return the server name
-                                reply.addString(self.server_name)
-                                self.info_port.reply(reply)
-                            elif "get_mcp_url" in cmd_str:
-                                # Return the MCP server URL
-                                reply.addString(self.mcp_url)
-                                self.info_port.reply(reply)
-                            elif "get_system_prompt_addendum" in cmd_str:
-                                # Return the system prompt addendum
-                                reply.addString(self.system_prompt_addendum)
-                                self.info_port.reply(reply)
-                    except Exception as e:
-                        logger.debug(f"RPC port error: {e}")
-
-                    # Small sleep to prevent busy waiting
-                    time.sleep(0.01)
-
-            # Start the background thread as a daemon
-            rpc_thread = threading.Thread(target=rpc_loop, daemon=True)
-            rpc_thread.start()
-
-        except Exception as e:
-            logger.error(f"Error starting info port: {e}")
-
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.info_port_running = False
@@ -244,24 +148,16 @@ System Prompt Addendum:
             except:
                 pass
 
-    def run(self, host: str = None, port: int = None):
-        """
-        Run the MCP server using FastMCP's built-in server.
-        """
-        # Initialize YARP network
-        yarp.Network.init()
-        self.yarp_network = yarp.Network()
+    def initialize(self) -> bool:
 
-        # Check if YARP server is running
-        if not self.yarp_network.checkNetwork():
-            logger.error("YARP network not available. Please start yarpserver.")
-            return
+        if not Yarp_mcpServer_Base._initialize(self):
+            return False
 
         # Create local port for Sound
         self.local_port = yarp.Port()
         if not self.local_port.open(self.local_port_name):
             logger.warning(f"Failed to open local port {self.local_port_name}")
-            self.local_port = None
+            return False
 
         if self.autoconnect and self.local_port:
             # Connect local port to remote port
@@ -269,25 +165,12 @@ System Prompt Addendum:
                 logger.warning(f"Failed to connect {self.local_port_name} to {self.remote_port_name}")
             else:
                 logger.info(f"Connected {self.local_port_name} to {self.remote_port_name}")
-        self.is_initialized = True
+        return True
 
-        host_i = host if host else self.base_url
-        port_i = port if port else self.mcp_port
-
-        try:
-            import uvicorn
-            logger.info(f"Starting YARP WakeWord MCP Server on {host_i}:{port_i}")
-            # Get the ASGI app from FastMCP
-            asgi_app = self.mcp.streamable_http_app()
-
-            # Run the app directly without mounting
-            uvicorn.run(asgi_app, host=host_i, port=port_i)
-        except Exception as e:
-            logger.exception("Failed to run MCP server: %s", e)
-            raise
 
 if __name__ == "__main__":
     config = yarp.ResourceFinder()
     config.configure(sys.argv)
+
     server = Yarp_mcpServer_WakeWordRPC(config)
     server.run()
