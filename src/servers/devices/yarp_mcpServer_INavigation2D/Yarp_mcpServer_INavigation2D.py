@@ -37,8 +37,6 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
     """MCP Server for YARP INavigation2D, ILocalization2D, and IMap2D interfaces (Streamable HTTP)"""
 
     def __init__(self, conf=None):
-        self.yarp_network = None
-        self.device_driver = None
         self.navigation_interface = None
         self.navigation_monitor_tasks = {}
         self.device_name = "navigation2D_nwc_yarp"
@@ -66,8 +64,6 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
         self.driver_options.put("map_locations_server", conf.find("map_locations_server").asString())
         self.driver_options.put("localization_server", conf.find("localization_server").asString())
 
-        # Register tools
-        self._register_tools()
 
     def _navigation_status_name(self, status: Any) -> str:
         """Convert a YARP navigation status enum into a stable string."""
@@ -217,18 +213,8 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
             with self.notification_lock:
                 self.navigation_monitor_tasks.pop(task_id, None)
 
-    def _register_tools(self):
+    def _register_internal_tools(self):
         """Register MCP tools"""
-
-        @self.mcp.tool()
-        async def subscribe_notifications(ctx: Context) -> dict[str, Any]:
-            """Subscribe this MCP session to server-side navigation task notifications."""
-            session_key = self._register_notification_session(ctx.session)
-            return {
-                "success": True,
-                "session_key": session_key,
-                "message": "Subscribed to navigation server task notifications"
-            }
 
         @self.notification_tool(
                 description="Start a background task that notifies when navigation reaches a terminal state.",
