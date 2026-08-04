@@ -156,16 +156,23 @@ class Yarp_mcpServer_Base(ABC):
                 pass
 
     @abstractmethod
-    def _initialize(self):
+    def _initialize(self) -> bool:
         """Initialize mcp server and YARP network"""
-        ...
+        # Check if YARP server is running
+        if not self.yarp_network.checkNetwork():
+            logger.error("YARP network not available. Please start yarpserver.")
+            return False
+        return True
 
     def run(self, host: str = None, port: int = None):
         """
         Run the MCP server using uvicorn.
         """
 
-        self._initialize()
+        self.is_initialized = self._initialize()
+        if not self.is_initialized:
+            logger.error("Failed to initialize the server. Exiting.")
+            return
 
         host_i = host if host else self.base_url
         port_i = port if port else self.mcp_port

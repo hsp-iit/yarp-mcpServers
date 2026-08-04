@@ -32,20 +32,17 @@ class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
         """Abstract method to get the interface view of the device driver"""
         ...
 
-    def _initialize(self):
-        # Initialize YARP network
+    def _initialize(self) -> bool:
 
-        # Check if YARP server is running
-        if not self.yarp_network.checkNetwork():
-            logger.error("YARP network not available. Please start yarpserver.")
-            return
+        if not Yarp_mcpServer_Notifier._initialize(self):
+            return False
 
         self.device_driver = yarp.PolyDriver(self.driver_options)
 
         if not self.device_driver.isValid():
             logger.error(f"Failed to create {self.driver_options.find('device').asString()} device. Check if the device is available.")
-            return
+            return False
 
 
-        self.is_initialized = self._interfaceView(self.device_driver)
+        return self._interfaceView(self.device_driver)
 
