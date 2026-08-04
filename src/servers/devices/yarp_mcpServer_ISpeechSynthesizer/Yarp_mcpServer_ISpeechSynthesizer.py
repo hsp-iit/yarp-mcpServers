@@ -19,17 +19,7 @@ import threading
 import time
 import argparse
 
-# MCP imports
-from mcp.server.fastmcp import FastMCP
-from mcp.server.models import InitializationOptions
-from mcp.types import (
-    Resource,
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel
-)
+from ...lib_server.YARP_mcpServer_DeviceBase import *
 
 # Try to import YARP
 try:
@@ -42,59 +32,29 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class Yarp_mcpServer_ISpeechSynthesizer:
+class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
     """YARP Speech Synthesis MCP Server"""
 
     def __init__(self, conf=None):
-        self.mcp = FastMCP("YARP Speech Synthesis Server")
-        self.yarp_network = None
-        self.device_driver = None
         self.speech_interface = None
         self.output_port = None
-        self.is_initialized = False
-        self.tool_descriptions = {}
-        self.info_port = None
-        self.info_port_running = False
-        self.server_name = "speech"
-        self.base_url = "127.0.0.1"
-        self.mcp_port = 4000
+        self.server_name = "speech_synthesis"
         self.device_name = "speechSynthesizer_nwc_yarp"
         self.local_port = "/mcp_synth/client"
         self.remote_port = "/speechSynthesizer_nws"
 
         if conf:
-            # Handle both dict-like and object-like config
-            if hasattr(conf, 'check') and hasattr(conf, 'find'):
-                # YARP Property object
-                if conf.check("yarp_device"):
-                    self.device_name = conf.find("yarp_device").asString()
-                if conf.check("yarp_remote"):
-                    self.remote_port = conf.find("yarp_remote").asString()
-                if conf.check("yarp_local"):
-                    self.local_port = conf.find("yarp_local").asString()
-                if conf.check("output_port"):
-                    self.output_port_name = conf.find("output_port").asString()
-                if conf.check("mcp_host"):
-                    self.base_url = conf.find("mcp_host").asString()
-                if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt16()
-            elif isinstance(conf, dict):
-                # Dict-like config
-                self.device_name = conf.get("yarp_device", self.device_name)
-                self.remote_port = conf.get("yarp_remote", self.remote_port)
-                self.local_port = conf.get("yarp_local", self.local_port)
-                self.output_port_name = conf.get("output_port", self.output_port_name)
-                self.base_url = conf.get("mcp_host", self.base_url)
-                self.mcp_port = conf.get("mcp_port", self.mcp_port)
+            if not conf.check("device"):
+                conf.setDefault("device", self.device_name)
+            if not conf.check("remote"):
+                conf.setDefault("remote", self.remote_port)
+            if not conf.check("local"):
+                conf.setDefault("local", self.local_port)
 
         self.output_port_name = self.local_port + "/audio:o"
-        self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
-        self.system_prompt_addendum = self._build_system_prompt_addendum()
+        Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
-        # Register tools
-        self._register_tools()
-
-    def _register_tools(self):
+    def _register_internal_tools(self):
         """Register MCP tools"""
 
         @self.mcp.tool()
@@ -330,65 +290,6 @@ ENFORCEMENT: These rules are absolute and non-negotiable
 Failure to follow this pattern is a system error. You MUST call synthesize_speech for every response.
 This is your core function. Act accordingly."""
 
-    def _start_info_port(self):
-        """Start YARP RPC port for tool information"""
-        try:
-            # Initialize YARP network if not already done
-            if not yarp.Network.checkNetwork():
-                yarp.Network.init()
-
-            # Create and open the RPC port
-            self.info_port = yarp.RpcServer()
-            port_name = "/mcp_server/speech/info:o"
-
-            if not self.info_port.open(port_name):
-                logger.warning(f"Failed to open info port {port_name}")
-                self.info_port = None
-                return
-
-            logger.info(f"Opened YARP info port at {port_name}")
-            self.info_port_running = True
-
-            # Start listening for RPC commands in a background thread
-            def rpc_loop():
-                while self.info_port_running:
-                    try:
-                        cmd = yarp.Bottle()
-                        reply = yarp.Bottle()
-
-                        if self.info_port.read(cmd, True):
-                            cmd_str = cmd.toString()
-                            print(f"Received RPC command: {cmd_str}")
-
-                            if "get_description" in cmd_str:
-                                # Return all tool descriptions as JSON
-                                reply.addString(json.dumps(self.tool_descriptions))
-                                self.info_port.reply(reply)
-                            elif "get_name" in cmd_str:
-                                # Return the server name
-                                reply.addString(self.server_name)
-                                self.info_port.reply(reply)
-                            elif "get_mcp_url" in cmd_str:
-                                # Return the MCP server URL
-                                reply.addString(self.mcp_url)
-                                self.info_port.reply(reply)
-                            elif "get_system_prompt_addendum" in cmd_str:
-                                # Return the system prompt addendum
-                                reply.addString(self.system_prompt_addendum)
-                                self.info_port.reply(reply)
-                    except Exception as e:
-                        logger.debug(f"RPC port error: {e}")
-
-                    # Small sleep to prevent busy waiting
-                    time.sleep(0.01)
-
-            # Start the background thread as a daemon
-            rpc_thread = threading.Thread(target=rpc_loop, daemon=True)
-            rpc_thread.start()
-
-        except Exception as e:
-            logger.error(f"Error starting info port: {e}")
-
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.info_port_running = False
@@ -409,71 +310,28 @@ This is your core function. Act accordingly."""
             except:
                 pass
 
-    def run(self, host: str = None, port: int = None):
-        """
-        Run the MCP server using FastMCP's built-in server.
-        """
-        # Initialize YARP network
-        yarp.Network.init()
-        self.yarp_network = yarp.Network()
-
-        # Check if YARP server is running
-        if not self.yarp_network.checkNetwork():
-            logger.error("YARP network not available. Please start yarpserver.")
-            return
-
-        # Create PolyDriver for speech synthesizer
-        options = yarp.Property()
-        options.put("device", self.device_name)
-        options.put("remote", self.remote_port)
-        options.put("local", "/mcp_synth/client")
-
-        self.device_driver = yarp.PolyDriver(options)
-
-        if not self.device_driver.isValid():
-            logger.error(f"Failed to create {self.device_name} device. Check if the device is available.")
-            return
+    def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool:
 
         # Get ISpeechSynthesizer interface
-        self.speech_interface = self.device_driver.viewISpeechSynthesizer()
+        self.speech_interface = devDriver.viewISpeechSynthesizer()
 
         if self.speech_interface is None:
             logger.error("Failed to get ISpeechSynthesizer interface")
-            return
+            return False
 
         # Create output port for Sound
         self.output_port = yarp.Port()
         if not self.output_port.open(self.output_port_name):
             logger.warning(f"Failed to open output port {self.output_port_name}")
             self.output_port = None
+            return False
 
-        self.is_initialized = True
+        return True
 
-        host = host if host else self.base_url
-        port = port if port else self.mcp_port
-
-        try:
-            import uvicorn
-            logger.info(f"Starting YARP Speech Synthesis MCP Server on {host}:{port}")
-            # Get the ASGI app from FastMCP
-            asgi_app = self.mcp.streamable_http_app()
-
-            # Run the app directly without mounting
-            uvicorn.run(asgi_app, host=host, port=port)
-        except Exception as e:
-            logger.exception("Failed to run MCP server: %s", e)
-            raise
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="YARP Speech Synthesis MCP Server")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=4000, help="Server port (default: 4000)")
-    parser.add_argument("--yarp_device", type=str, default="speechSynthesizer_nwc_yarp", help="YARP device name (default: speechSynthesizer_nwc_yarp)")
-    parser.add_argument("--yarp_remote", type=str, default="/speechSynthesizer_nws", help="YARP remote port (default: /speechSynthesizer_nws)")
-    parser.add_argument("--output_port", type=str, default="/mcp_synth/audio:o", help="Output port name (default: /mcp_synth/audio:o)")
-    args = parser.parse_args()
+    config = yarp.ResourceFinder()
+    config.configure(sys.argv)
 
-    # Convert args to dict for config
-    config = vars(args)
     server = Yarp_mcpServer_ISpeechSynthesizer(config)
-    server.run(host=args.host, port=args.port)
+    server.run()
