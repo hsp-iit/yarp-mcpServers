@@ -93,8 +93,11 @@ class Yarp_mcpServer_Base(ABC):
         self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
         self.mcp = FastMCP(f"YARP {self.server_name} Server")
 
+        self._register_common_tools()
+        self._register_internal_tools()
+
     @abstractmethod
-    def _register_tools(self):
+    def _register_internal_tools(self):
         """Register MCP tools"""
         ...
 
@@ -137,6 +140,11 @@ class Yarp_mcpServer_Base(ABC):
 
         except Exception as e:
             logger.error(f"Error starting info port: {e}")
+
+    @abstractmethod
+    def _register_common_tools(self):
+        """Register common MCP tools for notification subscription"""
+        ...
 
     @abstractmethod
     def __del__(self):

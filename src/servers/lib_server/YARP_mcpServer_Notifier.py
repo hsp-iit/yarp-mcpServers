@@ -164,3 +164,15 @@ class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
         )
         with self.notification_lock:
             self.task_created_at.pop(task_id, None)
+
+    async def _register_common_tools(self):
+        """Register common MCP tools for notification subscription."""
+        @self.mcp.tool()
+        async def subscribe_notifications(ctx: Context) -> dict[str, Any]:
+            f"""Subscribe this MCP session to server-side {self.server_name} task notifications."""
+            session_key = self._register_notification_session(ctx.session)
+            return {
+                "success": True,
+                "session_key": session_key,
+                "message": f"Subscribed to {self.server_name} task notifications"
+            }
