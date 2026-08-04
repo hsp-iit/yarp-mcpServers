@@ -54,9 +54,6 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
 
         Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
-        # Register tools
-        self._register_tools()
-
 
     async def _battery_charge_monitor_loop(
         self,
@@ -167,18 +164,8 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
             with self.notification_lock:
                 self.battery_monitor_tasks.pop(task_id, None)
 
-    def _register_tools(self):
+    def _register_internal_tools(self):
         """Register MCP tools"""
-
-        @self.mcp.tool()
-        async def subscribe_notifications(ctx: Context) -> dict[str, Any]:
-            """Subscribe this MCP session to server-side battery task notifications."""
-            session_key = self._register_notification_session(ctx.session)
-            return {
-                "success": True,
-                "session_key": session_key,
-                "message": "Subscribed to battery server task notifications"
-            }
 
         @self.mcp.tool()
         async def get_battery_voltage() -> dict[str, Any]:
