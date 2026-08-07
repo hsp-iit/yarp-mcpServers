@@ -16,7 +16,7 @@ class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
 
         if conf:
             # YARP Property object
-            if conf.check("yarp_device"):
+            if conf.check("device"):
                 self.driver_options.put("device", conf.find("device").asString())
             else:
                 raise MissingParameterError("device")

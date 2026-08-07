@@ -39,7 +39,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
     def __init__(self, conf=None):
         self.battery_interface = None
         self.battery_monitor_tasks = {}
-        self.server_name = "battery"
+        server_name = "yarp_mcpServer_IBattery"
         device_name = "battery_nwc_yarp"
         remote_port = "/battery_nws_yarp"
         local_port = "/battery_nwc_yarp"
@@ -51,6 +51,8 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 conf.setDefault("remote", remote_port)
             if not conf.check("local"):
                 conf.setDefault("local", local_port)
+            if not conf.check("server_name"):
+                conf.setDefault("server_name", server_name)
 
         Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
@@ -255,8 +257,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
         @self.notification_tool(
                 description="Start a server-side task that notifies when battery charge crosses a threshold. Direction must be \"below\" or \"above\". A timeout of 0 disables timeout. Notifications are sent as MCP notifications/tasks/status messages to subscribed clients.",
                 notification_kind="subscription",
-                notification_method="notifications/tasks/status",
-                requires_subscription=False,
+                notification_method="notifications/tasks/status"
         )
         async def start_battery_charge_monitor(
             threshold: float,

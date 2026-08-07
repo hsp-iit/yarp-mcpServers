@@ -32,7 +32,7 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
 
     def __init__(self, conf=None):
         self.autoconnect = True
-        self.server_name = "wake_word"
+        server_name = "yarp_mcpServer_WakeWordRPC"
         self.local_port_name = "/mcp_ww/rpc:o"
         self.remote_port_name = "/wake/rpc:i"
         self.local_port = None
@@ -44,6 +44,8 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
                 self.local_port_name = conf.find("local").asString()
             if conf.check("autoconnect"):
                 self.autoconnect = conf.find("autoconnect").asInt8() != 0
+            if not conf.check("server_name"):
+                conf.setDefault("server_name", server_name)
 
         Yarp_mcpServer_Base.__init__(self, conf)
 
@@ -116,6 +118,11 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
         # Start YARP RPC info port in a background thread
         self._start_info_port()
 
+    def _register_common_tools(self):
+        """Register common MCP tools for notification subscription"""
+        # Register the common tools from the base class
+        logger.info("Not yet implemented: _register_common_tools for Yarp_mcpServer_WakeWordRPC")
+
     def _build_system_prompt_addendum(self) -> str:
         """Build system prompt addendum for the client to modify LLM behavior"""
         return """
@@ -148,7 +155,7 @@ System Prompt Addendum:
             except:
                 pass
 
-    def initialize(self) -> bool:
+    def _initialize(self) -> bool:
 
         if not Yarp_mcpServer_Base._initialize(self):
             return False

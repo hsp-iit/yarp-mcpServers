@@ -39,6 +39,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
     def __init__(self, conf=None):
         self.navigation_interface = None
         self.navigation_monitor_tasks = {}
+        server_name = "yarp_mcpServer_INavigation2D"
         self.device_name = "navigation2D_nwc_yarp"
         self.remote_port = "/navigation2D_nws_yarp"
         self.local_port = "/navigation2D_nwc_yarp"
@@ -57,6 +58,8 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                 conf.setDefault("map_locations_server",self.map_locations_server)
             if not conf.check("localization_server"):
                 conf.setDefault("localization_server",self.localization_server)
+            if not conf.check("server_name"):
+                conf.setDefault("server_name", server_name)
 
         Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
@@ -219,8 +222,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
         @self.notification_tool(
                 description="Start a background task that notifies when navigation reaches a terminal state.",
                 notification_kind="subscription",
-                notification_method="notifications/tasks/status",
-                requires_subscription=False,
+                notification_method="notifications/tasks/status"
         )
         async def _start_navigation_monitor(
                 self,

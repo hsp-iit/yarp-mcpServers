@@ -165,7 +165,7 @@ class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
         with self.notification_lock:
             self.task_created_at.pop(task_id, None)
 
-    async def _register_common_tools(self):
+    def _register_common_tools(self):
         """Register common MCP tools for notification subscription."""
         @self.mcp.tool()
         async def subscribe_notifications(ctx: Context) -> dict[str, Any]:

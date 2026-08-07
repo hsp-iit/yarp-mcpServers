@@ -38,7 +38,7 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
     def __init__(self, conf=None):
         self.speech_interface = None
         self.output_port = None
-        self.server_name = "speech_synthesis"
+        server_name = "yarp_mcpServer_ISpeechSynthesizer"
         self.device_name = "speechSynthesizer_nwc_yarp"
         self.local_port = "/mcp_synth/client"
         self.remote_port = "/speechSynthesizer_nws"
@@ -50,6 +50,8 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                 conf.setDefault("remote", self.remote_port)
             if not conf.check("local"):
                 conf.setDefault("local", self.local_port)
+            if not conf.check("server_name"):
+                conf.setDefault("server_name", server_name)
 
         self.output_port_name = self.local_port + "/audio:o"
         Yarp_mcpServer_DeviceBase.__init__(self, conf)

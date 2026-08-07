@@ -170,6 +170,42 @@ class McpConfigParser:
 
         return value.asString()
 
+
+    # ==========================
+    def resource_finder_to_property(self,rf: yarp.ResourceFinder) -> yarp.Property:
+        # This binding exposes ResourceFinder.toString() as toString_c().
+        return yarp.Property(rf.toString_c())
+
+
+    def property_to_resource_finder(self,prop: yarp.Property) -> yarp.ResourceFinder:
+        entries = yarp.Bottle(prop.toString())
+        argv = ["property-conversion"]  # configure() skips argv[0]
+
+        for i in range(entries.size()):
+            entry = entries.get(i).asList()
+            if entry is None or entry.size() == 0:
+                continue
+
+            argv.append("--" + entry.get(0).asString())
+
+            for j in range(1, entry.size()):
+                value = entry.get(j)
+                text = value.toString_c()
+
+                # Value.toString_c() omits the outer parentheses of lists.
+                if value.isList():
+                    text = f"({text})"
+
+                argv.append(text)
+
+        rf = yarp.ResourceFinder()
+        if not rf.configure(argv):
+            raise RuntimeError("Could not configure ResourceFinder from Property")
+
+        return rf
+    # ==========================
+
+
     def get_minimal_devices_info(self):
         """
         Retrieve a minimal dictionary of device names and their types.

@@ -125,7 +125,7 @@ class Yarp_mcpServer_Base(ABC):
                 yarp.Network.init()
 
             # Create and open the RPC port
-            self.info_port = yarp.RpcServer()
+            self.info_port = yarp.Port()
             port_name = f"/mcp_server/{self.server_name}/info:o"
 
             if not self.info_port.open(port_name):
@@ -159,6 +159,7 @@ class Yarp_mcpServer_Base(ABC):
     def _initialize(self) -> bool:
         """Initialize mcp server and YARP network"""
         # Check if YARP server is running
+        self.yarp_network = yarp.Network()
         if not self.yarp_network.checkNetwork():
             logger.error("YARP network not available. Please start yarpserver.")
             return False
