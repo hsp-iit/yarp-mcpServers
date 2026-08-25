@@ -17,12 +17,16 @@ from mcp.types import (
     TaskStatusNotificationParams
 )
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+globLogger = logging.getLogger(__name__)
+
 from .YARP_mcpServer_Base import *
 
 class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
 
-    def __init__(self, conf:yarp.ResourceFinder=None):
-        Yarp_mcpServer_Base.__init__(self, conf)
+    def __init__(self, conf:yarp.ResourceFinder=None, logger: logging.Logger = globLogger, enableExplicitLogging: bool = True):
+        Yarp_mcpServer_Base.__init__(self, conf, logger, enableExplicitLogging)
         # Notification infrastructure for MCP streaming.
         # Clients subscribe with subscribe_notifications(); monitoring tasks then
         # broadcast official notifications/tasks/status messages to those sessions.
@@ -143,7 +147,7 @@ class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
             try:
                 await session.send_notification(notification)
             except Exception as e:
-                logger.debug(f"Failed to emit task notification to session {session_key}: {e}")
+                self.fancyLog.DEBUG(f"Failed to emit task notification to session {session_key}: {e}")
                 dead_sessions.append(session_key)
 
         if dead_sessions:
