@@ -25,12 +25,12 @@ except ImportError:
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+globLogger = logging.getLogger(__name__)
 
 class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
     """YARP WakeWord RPC MCP Server"""
 
-    def __init__(self, conf=None):
+    def __init__(self, conf=None, logger : logging.Logger = globLogger, enableFancyLogging: bool = True):
         self.autoconnect = True
         server_name = "yarp_mcpServer_WakeWordRPC"
         self.local_port_name = "/mcp_ww/rpc:o"
@@ -47,7 +47,7 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
             if not conf.check("server_name"):
                 conf.setDefault("server_name", server_name)
 
-        Yarp_mcpServer_Base.__init__(self, conf)
+        Yarp_mcpServer_Base.__init__(self, conf, logger, enableFancyLogging)
 
     def _register_internal_tools(self):
         """Register MCP tools"""
@@ -69,7 +69,7 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
                 toWakeWord.addString("stop")
                 self.local_port.write(toWakeWord, reply)
                 if reply is not None and reply.get(0).asString() == "nack":
-                    logger.error("DialogueManager::interactWithDialogMng. Orchestrator returned NACK.")
+                    self.fancyLog.ERROR("DialogueManager::interactWithDialogMng. Orchestrator returned NACK.")
                     success = False
 
                 return {
@@ -78,7 +78,7 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
                 }
 
             except Exception as e:
-                logger.error(f"Error during speech synthesis: {e}")
+                self.fancyLog.ERROR(f"Error during speech synthesis: {e}")
                 return {
                     "success": False,
                     "error": f"Speech synthesis error: {str(e)}"
@@ -121,7 +121,7 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
     def _register_common_tools(self):
         """Register common MCP tools for notification subscription"""
         # Register the common tools from the base class
-        logger.info("Not yet implemented: _register_common_tools for Yarp_mcpServer_WakeWordRPC")
+        self.fancyLog.INFO("Not yet implemented: _register_common_tools for Yarp_mcpServer_WakeWordRPC")
 
     def _build_system_prompt_addendum(self) -> str:
         """Build system prompt addendum for the client to modify LLM behavior"""
@@ -163,15 +163,15 @@ System Prompt Addendum:
         # Create local port for Sound
         self.local_port = yarp.Port()
         if not self.local_port.open(self.local_port_name):
-            logger.warning(f"Failed to open local port {self.local_port_name}")
+            self.fancyLog.WARNING(f"Failed to open local port {self.local_port_name}")
             return False
 
         if self.autoconnect and self.local_port:
             # Connect local port to remote port
             if not yarp.Network.connect(self.local_port_name, self.remote_port_name):
-                logger.warning(f"Failed to connect {self.local_port_name} to {self.remote_port_name}")
+                self.fancyLog.WARNING(f"Failed to connect {self.local_port_name} to {self.remote_port_name}")
             else:
-                logger.info(f"Connected {self.local_port_name} to {self.remote_port_name}")
+                self.fancyLog.INFO(f"Connected {self.local_port_name} to {self.remote_port_name}")
         return True
 
 
