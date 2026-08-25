@@ -30,12 +30,12 @@ except ImportError:
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+globLogger = logging.getLogger(__name__)
 
 class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
     """YARP Speech Synthesis MCP Server"""
 
-    def __init__(self, conf=None):
+    def __init__(self, conf=None, logger: logging.Logger = globLogger, enableFancyLogging: bool = True):
         self.speech_interface = None
         self.output_port = None
         server_name = "yarp_mcpServer_ISpeechSynthesizer"
@@ -54,7 +54,7 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                 conf.setDefault("server_name", server_name)
 
         self.output_port_name = self.local_port + "/audio:o"
-        Yarp_mcpServer_DeviceBase.__init__(self, conf)
+        Yarp_mcpServer_DeviceBase.__init__(self, conf, logger, enableFancyLogging)
 
     def _register_internal_tools(self):
         """Register MCP tools"""
@@ -81,22 +81,22 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                 if language != "auto":
                     ret = self.speech_interface.setLanguage(language)
                     if not ret:
-                        logger.warning(f"Failed to set language to {language}")
+                        self.fancyLog.WARNING(f"Failed to set language to {language}")
 
                 if voice != "auto":
                     ret = self.speech_interface.setVoice(voice)
                     if not ret:
-                        logger.warning(f"Failed to set voice to {voice}")
+                        self.fancyLog.WARNING(f"Failed to set voice to {voice}")
 
                 if speed != 1.0:
                     ret = self.speech_interface.setSpeed(speed)
                     if not ret:
-                        logger.warning(f"Failed to set speed to {speed}")
+                        self.fancyLog.WARNING(f"Failed to set speed to {speed}")
 
                 if pitch != 1.0:
                     ret = self.speech_interface.setPitch(pitch)
                     if not ret:
-                        logger.warning(f"Failed to set pitch to {pitch}")
+                        self.fancyLog.WARNING(f"Failed to set pitch to {pitch}")
 
                 # Create Sound object for output
                 sound = yarp.Sound()
@@ -133,7 +133,7 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                logger.error(f"Error during speech synthesis: {e}")
+                self.fancyLog.ERROR(f"Error during speech synthesis: {e}")
                 return {
                     "success": False,
                     "error": f"Speech synthesis error: {str(e)}"
@@ -290,7 +290,7 @@ ENFORCEMENT: These rules are absolute and non-negotiable
 ═══════════════════════════════════════════════════════════════════════════════
 
 Failure to follow this pattern is a system error. You MUST call synthesize_speech for every response.
-This is your core function. Act accordingly."""
+This is your core function. Act accordingly.""".lstrip("\n")
 
     def __del__(self):
         """Destructor to ensure cleanup"""
@@ -318,13 +318,13 @@ This is your core function. Act accordingly."""
         self.speech_interface = devDriver.viewISpeechSynthesizer()
 
         if self.speech_interface is None:
-            logger.error("Failed to get ISpeechSynthesizer interface")
+            self.fancyLog.ERROR("Failed to get ISpeechSynthesizer interface")
             return False
 
         # Create output port for Sound
         self.output_port = yarp.Port()
         if not self.output_port.open(self.output_port_name):
-            logger.warning(f"Failed to open output port {self.output_port_name}")
+            self.fancyLog.WARNING(f"Failed to open output port {self.output_port_name}")
             self.output_port = None
             return False
 
