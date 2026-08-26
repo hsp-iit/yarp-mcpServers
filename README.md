@@ -2,6 +2,10 @@
 
 A Python-based Model Context Protocol (MCP) server framework that bridges YARP (Yet Another Robot Platform) and enables communication through MCP. This project provides server implementations for various YARP interfaces through device and RPC-based servers, allowing seamless integration with AI models and applications that support the MCP protocol.
 
+For a quick code tour, see [REPOSITORY_MAP.md](REPOSITORY_MAP.md). See
+[ARCHITECTURE.md](ARCHITECTURE.md) for ownership and lifecycle, and
+[ASYNC_OPERATIONS.md](ASYNC_OPERATIONS.md) for long-running work.
+
 ## ⚠️ Disclaimer
 
 This codebase has been written with the contribution of generative AI. While the code has been tested, please use it carefully and review it for your specific use case before deploying in production environments.
@@ -76,7 +80,7 @@ Exposes speech synthesis functionality for text-to-speech operations.
    ```
 
    Key dependencies (defined in pyproject.toml):
-   - `mcp[cli]>=1.14.1` - Model Context Protocol framework
+   - `mcp[cli]>=2.0,<3` - Model Context Protocol framework
    - `fastapi>=0.118.0` - Web framework for MCP server
    - `uvicorn>=0.37.0` - ASGI server
    - `ollama>=0.6.0` - Optional: for local LLM support
