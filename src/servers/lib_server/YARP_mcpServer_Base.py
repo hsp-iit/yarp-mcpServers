@@ -4,6 +4,7 @@ Base class for YARP_mcpServer. This class is used to create a server that can co
 
 from abc import ABC, abstractmethod
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import json
 import threading
@@ -14,17 +15,8 @@ import uvicorn
 from typing import Any, Sequence
 
 # MCP imports
-from mcp.server.fastmcp import FastMCP
-from mcp.server.models import InitializationOptions
-
-from mcp.types import (
-    Resource,
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel
-)
+from mcp.server import MCPServer
+from mcp.server.subscriptions import InMemorySubscriptionBus
 
 from ...modules.fancyLogging import FancyLogger
 
@@ -96,7 +88,25 @@ class Yarp_mcpServer_Base(ABC):
             else:
                 raise MissingParameterError("server_name")
         self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
-        self.mcp = FastMCP(f"YARP {self.server_name} Server")
+        @asynccontextmanager
+        async def server_lifespan(_server):
+            start_maintenance = getattr(self, "_start_operation_maintenance", None)
+            if start_maintenance is not None:
+                await start_maintenance()
+            try:
+                yield None
+            finally:
+                cleanup = getattr(self, "_cleanup_operations", None)
+                if cleanup is not None:
+                    await cleanup()
+
+        self.subscription_bus = InMemorySubscriptionBus()
+        self.mcp = MCPServer(
+            name=f"YARP {self.server_name} Server",
+            version="0.2.0",
+            subscriptions=self.subscription_bus,
+            lifespan=server_lifespan,
+        )
 
         self._register_common_tools()
         self._register_internal_tools()
@@ -148,7 +158,7 @@ class Yarp_mcpServer_Base(ABC):
 
     @abstractmethod
     def _register_common_tools(self):
-        """Register common MCP tools for notification subscription"""
+        """Register common MCP tools and resources."""
         ...
 
     @abstractmethod
@@ -184,7 +194,7 @@ class Yarp_mcpServer_Base(ABC):
         port_i = port if port else self.mcp_port
         try:
             self.fancyLog.INFO(f"Starting YARP {self.server_name} MCP Server on {host_i}:{port_i}")
-            # Get the ASGI app from FastMCP
+            # Get the ASGI app from MCPServer. Its lifespan owns transport work.
             asgi_app = self.mcp.streamable_http_app()
             # Run the app with uvicorn
             uvicorn.run(asgi_app, host=host_i, port=port_i)

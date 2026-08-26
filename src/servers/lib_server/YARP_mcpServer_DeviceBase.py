@@ -2,19 +2,26 @@
 Base class for yarp device based YARP_mcpServer. This class is used to create a server that can communicate with YARP clients.
 """
 
-from .YARP_mcpServer_Notifier import *
+from abc import abstractmethod
+import asyncio
+import logging
+from typing import Any, Callable
+
+from .YARP_mcpServer_Base import MissingParameterError, yarp
+from .YARP_mcpServer_Operations import Yarp_mcpServer_Operations
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 globLogger = logging.getLogger(__name__)
 
-class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
+class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Operations):
     """Abstract Base class for device related Yarp_mcpServer"""
 
     @abstractmethod
     def __init__(self, conf:yarp.ResourceFinder=None, logger: logging.Logger = globLogger, enableExplicitLogging: bool = True):
-        Yarp_mcpServer_Notifier.__init__(self, conf, logger, enableExplicitLogging)
+        Yarp_mcpServer_Operations.__init__(self, conf, logger, enableExplicitLogging)
         self.device_driver = None
+        self._yarp_call_lock = asyncio.Lock()
 
         self.driver_options = yarp.Property()
 
@@ -31,6 +38,11 @@ class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
             else:
                 raise MissingParameterError("local")
 
+    async def _call_yarp(self, function: Callable[..., Any], *args: Any) -> Any:
+        """Run one blocking YARP binding call without blocking the MCP event loop."""
+        async with self._yarp_call_lock:
+            return await asyncio.to_thread(function, *args)
+
     @abstractmethod
     def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool :
         """Abstract method to get the interface view of the device driver"""
@@ -38,7 +50,7 @@ class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
 
     def _initialize(self) -> bool:
 
-        if not Yarp_mcpServer_Notifier._initialize(self):
+        if not Yarp_mcpServer_Operations._initialize(self):
             return False
 
         self.device_driver = yarp.PolyDriver(self.driver_options)
@@ -49,4 +61,3 @@ class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Notifier):
 
 
         return self._interfaceView(self.device_driver)
-
