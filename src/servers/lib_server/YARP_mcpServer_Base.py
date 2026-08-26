@@ -63,6 +63,7 @@ class McpServer_rpcHandler(yarp.RFModule):
 
         # Process the command and generate a response
         response = self.mcp_server.handle_command(cmd_str)
+        self.fancyLog.INFO(f"Sending response: {response}")
         reply.fromString(response)
         return True
 
@@ -139,7 +140,7 @@ class Yarp_mcpServer_Base(ABC):
 
             self.fancyLog.INFO(f"Opened YARP info port at {port_name}")
             self.info_port_running = True
-            self.rpcHandler = McpServer_rpcHandler(self)
+            self.rpcHandler = McpServer_rpcHandler(self, self.fancyLog)
             self.rpcHandler.attach(self.info_port)
 
         except Exception as e:

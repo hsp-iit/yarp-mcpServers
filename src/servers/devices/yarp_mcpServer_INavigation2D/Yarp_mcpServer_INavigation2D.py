@@ -183,6 +183,8 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     )
                     return
 
+                self.fancyLog.INFO(f"Navigation monitor {task_id}: status={status_name}, elapsed={time.monotonic() - start_time:.1f}s")
+
                 await asyncio.sleep(poll_interval)
 
         except asyncio.CancelledError:
@@ -225,13 +227,13 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                 notification_method="notifications/tasks/status"
         )
         async def _start_navigation_monitor(
-                self,
                 task_id: str,
                 command_tool: str,
                 target_data: dict[str, Any],
                 poll_interval: float = 1.0,
                 timeout: float = 300.0,
             ) -> None:
+                self.fancyLog.INFO(f"Starting navigation monitor for task_id={task_id}, command_tool={command_tool}, target_data={target_data}, poll_interval={poll_interval}, timeout={timeout}")
                 task = asyncio.create_task(
                     self._navigation_monitor_loop(
                         task_id=task_id,
@@ -243,6 +245,11 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                 )
                 with self.notification_lock:
                     self.navigation_monitor_tasks[task_id] = task
+                return {
+                    "success": True,
+                    "task_id": task_id,
+                    "target_tool": "get_navigation_status",
+                }
 
 
         # ===================== NAVIGATION TOOLS =====================
@@ -270,13 +277,14 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "target_theta": theta
                 }
 
-                if result:
-                    self._start_navigation_monitor(
-                        task_id=task_id,
-                        command_tool="goto_target_by_absolute_location",
-                        target_data=target_data,
-                    )
-                else:
+                # if result:
+                #     self._start_navigation_monitor(
+                #         task_id=task_id,
+                #         command_tool="goto_target_by_absolute_location",
+                #         target_data=target_data,
+                #     )
+                # else:
+                if not result:
                     await self._emit_task_status_to_subscribers(
                         task_id=task_id,
                         status="failed",
@@ -323,13 +331,14 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "relative_theta": theta
                 }
 
-                if result:
-                    self._start_navigation_monitor(
-                        task_id=task_id,
-                        command_tool="goto_target_by_relative_location",
-                        target_data=target_data,
-                    )
-                else:
+                # if result:
+                #     self._start_navigation_monitor(
+                #         task_id=task_id,
+                #         command_tool="goto_target_by_relative_location",
+                #         target_data=target_data,
+                #     )
+                # else:
+                if not result:
                     await self._emit_task_status_to_subscribers(
                         task_id=task_id,
                         status="failed",
@@ -401,13 +410,14 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "waypoints": waypoints
                 }
 
-                if result:
-                    self._start_navigation_monitor(
-                        task_id=task_id,
-                        command_tool="follow_path",
-                        target_data=target_data,
-                    )
-                else:
+                # if result:
+                #     self._start_navigation_monitor(
+                #         task_id=task_id,
+                #         command_tool="follow_path",
+                #         target_data=target_data,
+                #     )
+                # else:
+                if not result:
                     await self._emit_task_status_to_subscribers(
                         task_id=task_id,
                         status="failed",
@@ -1261,8 +1271,7 @@ COORDINATE SYSTEM & ORIENTATION:
 MONITORING FOR NAVIGATION (CRITICAL):
 When the user asks you to navigate somewhere, ALWAYS follow this pattern:
   1. Call goto_target_by_absolute_location() or goto_target_by_relative_location()
-  2. The navigation server automatically starts a server-side MCP task notification
-     for the returned task_id
+  2. Asks the server to monitor the navigation progress by calling the _start_navigation_monitoring() tool
   3. Tell the user you're starting navigation and will notify them when complete
   4. DO NOT wait for the navigation to complete - let server-side monitoring run in the background
 

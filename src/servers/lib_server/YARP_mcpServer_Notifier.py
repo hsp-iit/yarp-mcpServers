@@ -17,11 +17,11 @@ from mcp.types import (
     TaskStatusNotificationParams
 )
 
+from .YARP_mcpServer_Base import *
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 globLogger = logging.getLogger(__name__)
 
-from .YARP_mcpServer_Base import *
 
 class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
 
@@ -138,6 +138,8 @@ class Yarp_mcpServer_Notifier(Yarp_mcpServer_Base):
             data=data or {},
         )
         notification = ServerNotification(TaskStatusNotification(params=params))
+
+        self.fancyLog.DEBUG(f"Emitting task notification: {notification.model_dump_json()}")
 
         with self.notification_lock:
             sessions = list(self.notification_sessions.items())
