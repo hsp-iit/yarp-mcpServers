@@ -119,7 +119,7 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
         self._start_info_port()
 
     def _register_common_tools(self):
-        """Register common MCP tools for notification subscription"""
+        """Register common MCP tools (none are needed by this synchronous server)."""
         # Register the common tools from the base class
         self.fancyLog.INFO("Not yet implemented: _register_common_tools for Yarp_mcpServer_WakeWordRPC")
 

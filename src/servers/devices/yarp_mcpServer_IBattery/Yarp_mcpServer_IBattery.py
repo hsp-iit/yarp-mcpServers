@@ -20,6 +20,7 @@ import argparse
 
 
 from ...lib_server.YARP_mcpServer_DeviceBase import *
+from ...lib_server.operation_models import OperationErrorResult, StartOperationResult
 
 # Try to import YARP
 try:
@@ -38,7 +39,6 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
 
     def __init__(self, conf=None, logger: logging.Logger = globLogger, enableExplicitLogging: bool = True):
         self.battery_interface = None
-        self.battery_monitor_tasks = {}
         server_name = "yarp_mcpServer_IBattery"
         device_name = "battery_nwc_yarp"
         remote_port = "/battery_nws_yarp"
@@ -59,48 +59,44 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
 
     async def _battery_charge_monitor_loop(
         self,
-        task_id: str,
+        operation_id: str,
         threshold: float,
         direction: str,
         poll_interval: float,
         timeout: float,
     ) -> None:
-        """Poll battery charge and notify subscribers when the threshold is crossed."""
+        """Poll battery charge and update its authoritative operation resource."""
         start_time = time.monotonic()
         comparison = "<" if direction == "below" else ">"
 
         try:
-            await self._emit_task_status_to_subscribers(
-                task_id=task_id,
+            await self.operation_registry.update(
+                operation_id,
                 status="working",
-                tool="get_battery_charge",
-                data={
+                details={
                     "threshold": threshold,
                     "direction": direction,
                     "condition": f"charge {comparison} {threshold}",
                 },
                 status_message=f"Monitoring battery charge until it is {direction} {threshold}%",
-                event="started",
             )
             await asyncio.sleep(poll_interval)
 
             while True:
                 if self.battery_interface is None:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="failed",
-                        tool="get_battery_charge",
-                        data={
+                        error={"message": "YARP battery not initialized"},
+                        details={
                             "threshold": threshold,
                             "direction": direction,
-                            "error": "YARP battery not initialized",
                         },
                         status_message="Battery monitor failed: interface not initialized",
-                        event="failed",
                     )
                     return
 
-                charge = self.battery_interface.getBatteryCharge()
+                charge = await self._call_yarp(self.battery_interface.getBatteryCharge)
                 crossed = charge < threshold if direction == "below" else charge > threshold
                 data = {
                     "charge": charge,
@@ -111,60 +107,44 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
                 if crossed:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="completed",
-                        tool="get_battery_charge",
-                        data=data,
+                        details=data,
+                        result=data,
                         status_message=f"Battery charge is {charge:.1f}%, {direction} threshold {threshold:.1f}%",
-                        event="complete",
                     )
                     return
 
                 if timeout > 0 and time.monotonic() - start_time >= timeout:
-                    data["error"] = "timeout"
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="failed",
-                        tool="get_battery_charge",
-                        data=data,
+                        details=data,
+                        error={"message": "timeout", "timeout_seconds": timeout},
                         status_message=f"Battery monitor timed out after {timeout:.1f}s",
-                        event="timeout",
                     )
                     return
 
                 await asyncio.sleep(poll_interval)
 
         except asyncio.CancelledError:
-            await self._emit_task_status_to_subscribers(
-                task_id=task_id,
+            await self.operation_registry.update(
+                operation_id,
                 status="cancelled",
-                tool="get_battery_charge",
-                data={
-                    "threshold": threshold,
-                    "direction": direction,
-                },
+                details={"threshold": threshold, "direction": direction},
                 status_message="Battery charge monitor cancelled",
-                event="cancelled",
             )
             raise
         except Exception as e:
-            self.fancyLog.ERROR(f"Battery charge monitor {task_id} failed: {e}")
-            await self._emit_task_status_to_subscribers(
-                task_id=task_id,
+            self.fancyLog.ERROR(f"Battery charge monitor {operation_id} failed: {e}")
+            await self.operation_registry.update(
+                operation_id,
                 status="failed",
-                tool="get_battery_charge",
-                data={
-                    "threshold": threshold,
-                    "direction": direction,
-                    "error": str(e),
-                },
+                details={"threshold": threshold, "direction": direction},
+                error={"message": str(e)},
                 status_message=f"Battery monitor failed: {e}",
-                event="failed",
             )
-        finally:
-            with self.notification_lock:
-                self.battery_monitor_tasks.pop(task_id, None)
 
     def _register_internal_tools(self):
         """Register MCP tools"""
@@ -179,7 +159,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             try:
-                voltage = self.battery_interface.getBatteryVoltage()
+                voltage = await self._call_yarp(self.battery_interface.getBatteryVoltage)
 
                 return {
                     "success": True,
@@ -204,7 +184,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             try:
-                current = self.battery_interface.getBatteryCurrent()
+                current = await self._call_yarp(self.battery_interface.getBatteryCurrent)
 
                 return {
                     "success": True,
@@ -231,15 +211,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             try:
-                charge = self.battery_interface.getBatteryCharge()
-
-                # await self._emit_tool_snapshot(
-                #     "get_battery_charge",
-                #     {
-                #         "charge": charge,
-                #         "unit": "percent"
-                #     }
-                # )
+                charge = await self._call_yarp(self.battery_interface.getBatteryCharge)
 
                 return {
                     "success": True,
@@ -254,23 +226,18 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                     "error": f"Failed to get charge: {str(e)}"
                 }
 
-        @self.notification_tool(
-                description="Start a server-side task that notifies when battery charge crosses a threshold. Direction must be \"below\" or \"above\". A timeout of 0 disables timeout. Notifications are sent as MCP notifications/tasks/status messages to subscribed clients.",
-                notification_kind="subscription",
-                notification_method="notifications/tasks/status"
-        )
+        @self.mcp.tool(structured_output=True)
         async def start_battery_charge_monitor(
             threshold: float,
             direction: str = "below",
             poll_interval: float = 1.0,
             timeout: float = 0.0,
-        ) -> dict[str, Any]:
+        ) -> StartOperationResult | OperationErrorResult:
 
             if self.battery_interface is None:
-                return {
-                    "success": False,
-                    "error": "YARP battery not initialized. Call initialize_yarp first."
-                }
+                return OperationErrorResult(
+                    error="YARP battery not initialized. Call initialize_yarp first."
+                )
 
             direction_normalized = direction.lower().strip()
             aliases = {
@@ -283,61 +250,58 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
             }
             direction_normalized = aliases.get(direction_normalized, direction_normalized)
             if direction_normalized not in {"below", "above"}:
-                return {
-                    "success": False,
-                    "error": "direction must be 'below' or 'above'"
-                }
+                return OperationErrorResult(error="direction must be 'below' or 'above'")
 
             if poll_interval <= 0:
-                return {
-                    "success": False,
-                    "error": "poll_interval must be positive"
-                }
+                return OperationErrorResult(error="poll_interval must be positive")
 
             if timeout < 0:
-                return {
-                    "success": False,
-                    "error": "timeout cannot be negative"
-                }
+                return OperationErrorResult(error="timeout cannot be negative")
 
-            task_id = self._new_task_id("battery_charge")
-            task = asyncio.create_task(
+            comparison = "<" if direction_normalized == "below" else ">"
+            operation = await self.operation_registry.create(
+                "battery_charge_monitor",
+                status_message=f"Monitoring battery charge until it is {direction_normalized} {threshold}%",
+                details={
+                    "threshold": threshold,
+                    "direction": direction_normalized,
+                    "condition": f"charge {comparison} {threshold}",
+                },
+                poll_interval_ms=max(1, round(poll_interval * 1000)),
+            )
+            await self._start_operation_task(
+                operation,
                 self._battery_charge_monitor_loop(
-                    task_id=task_id,
+                    operation_id=operation.operation_id,
                     threshold=threshold,
                     direction=direction_normalized,
                     poll_interval=poll_interval,
                     timeout=timeout,
-                )
+                ),
             )
-            with self.notification_lock:
-                self.battery_monitor_tasks[task_id] = task
-
-            comparison = "<" if direction_normalized == "below" else ">"
-            return {
-                "success": True,
-                "task_id": task_id,
-                "condition": f"charge {comparison} {threshold}",
-                "message": f"Started server-side battery monitor {task_id}"
-            }
+            return StartOperationResult(
+                operation_id=operation.operation_id,
+                operation_type=operation.operation_type,
+                status_uri=operation.status_uri,
+                poll_interval_ms=operation.poll_interval_ms,
+                message=f"Started server-side battery monitor {operation.operation_id}",
+            )
 
         @self.mcp.tool()
-        async def stop_battery_charge_monitor(task_id: str) -> dict[str, Any]:
+        async def stop_battery_charge_monitor(operation_id: str) -> dict[str, Any]:
             """Cancel a server-side battery charge monitor."""
-            with self.notification_lock:
-                task = self.battery_monitor_tasks.get(task_id)
-
-            if task is None:
+            try:
+                snapshot = await self.operation_registry.cancel(operation_id)
+            except Exception:
                 return {
                     "success": False,
-                    "error": f"Battery monitor {task_id} not found"
+                    "error": f"Battery monitor {operation_id} not found"
                 }
-
-            task.cancel()
             return {
                 "success": True,
-                "task_id": task_id,
-                "message": f"Battery monitor {task_id} cancellation requested"
+                "operation_id": operation_id,
+                "status": snapshot.status,
+                "message": f"Battery monitor {operation_id} cancellation requested"
             }
 
         @self.mcp.tool()
@@ -350,7 +314,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             try:
-                temperature = self.battery_interface.getBatteryTemperature()
+                temperature = await self._call_yarp(self.battery_interface.getBatteryTemperature)
 
                 return {
                     "success": True,
@@ -375,7 +339,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             try:
-                status = self.battery_interface.getBatteryStatus()
+                status = await self._call_yarp(self.battery_interface.getBatteryStatus)
 
                 # Map status enum to string
                 status_map = {
@@ -389,14 +353,6 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
                 status_str = status_map.get(status, f"UNKNOWN_STATUS_{status}")
-
-                await self._emit_tool_snapshot(
-                    "get_battery_status",
-                    {
-                        "status": status_str,
-                        "status_code": status
-                    }
-                )
 
                 return {
                     "success": True,
@@ -421,7 +377,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             try:
-                info = self.battery_interface.getBatteryInfo()
+                info = await self._call_yarp(self.battery_interface.getBatteryInfo)
 
                 return {
                     "success": True,
@@ -451,27 +407,35 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
 
                 # Get all measurements
                 try:
-                    data["voltage"] = self.battery_interface.getBatteryVoltage()
+                    data["voltage"] = await self._call_yarp(
+                        self.battery_interface.getBatteryVoltage
+                    )
                 except Exception as e:
                     data["voltage_error"] = str(e)
 
                 try:
-                    data["current"] = self.battery_interface.getBatteryCurrent()
+                    data["current"] = await self._call_yarp(
+                        self.battery_interface.getBatteryCurrent
+                    )
                 except Exception as e:
                     data["current_error"] = str(e)
 
                 try:
-                    data["charge"] = self.battery_interface.getBatteryCharge()
+                    data["charge"] = await self._call_yarp(
+                        self.battery_interface.getBatteryCharge
+                    )
                 except Exception as e:
                     data["charge_error"] = str(e)
 
                 try:
-                    data["temperature"] = self.battery_interface.getBatteryTemperature()
+                    data["temperature"] = await self._call_yarp(
+                        self.battery_interface.getBatteryTemperature
+                    )
                 except Exception as e:
                     data["temperature_error"] = str(e)
 
                 try:
-                    status = self.battery_interface.getBatteryStatus()
+                    status = await self._call_yarp(self.battery_interface.getBatteryStatus)
                     status_map = {
                         0: "BATTERY_OK_STANBY",
                         1: "BATTERY_OK_IN_CHARGE",
@@ -487,7 +451,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                     data["status_error"] = str(e)
 
                 try:
-                    data["info"] = self.battery_interface.getBatteryInfo()
+                    data["info"] = await self._call_yarp(self.battery_interface.getBatteryInfo)
                 except Exception as e:
                     data["info_error"] = str(e)
 
@@ -531,13 +495,8 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
             try:
                 cleanup_status = []
 
-                with self.notification_lock:
-                    monitor_tasks = list(self.battery_monitor_tasks.values())
-                    self.battery_monitor_tasks.clear()
-                for task in monitor_tasks:
-                    task.cancel()
-                if monitor_tasks:
-                    cleanup_status.append(f"Cancelled {len(monitor_tasks)} battery monitor task(s)")
+                await self._cleanup_operations()
+                cleanup_status.append("Cancelled active battery operations")
 
                 if self.device_driver:
                     self.device_driver.close()
@@ -573,26 +532,21 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
 BATTERY SERVER INSTRUCTIONS:
 
 When the user asks to be notified when battery charge goes below or above a
-threshold, prefer the server-side MCP notification tool:
+threshold, prefer the server-side operation tool:
   - start_battery_charge_monitor(threshold, direction, poll_interval, timeout)
 
 Examples:
   - "Tell me when battery is below 20%" -> start_battery_charge_monitor(20, "below")
   - "Tell me when battery is above 80%" -> start_battery_charge_monitor(80, "above")
 
-The monitor sends notifications/tasks/status MCP notifications when the threshold
-condition is reached. Use get_battery_charge() for one-shot battery reads.
+The tool returns an operation_id and status_uri. The client can subscribe to the
+operation resource and refetch it when notified. Use get_battery_charge() for a
+one-shot battery read.
 """.lstrip("\n")
 
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.info_port_running = False
-        with self.notification_lock:
-            monitor_tasks = list(self.battery_monitor_tasks.values())
-            self.battery_monitor_tasks.clear()
-        for task in monitor_tasks:
-            task.cancel()
-
         if self.info_port:
             try:
                 self.info_port.close()
