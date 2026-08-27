@@ -7,15 +7,14 @@ import threading
 import time
 import yarp
 import uvicorn
-from mcp.server.fastmcp import FastMCP
-from mcp.types import Resource, TextContent
+from mcp.server import MCPServer
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 class Yarp_mcpServer_JsonRes:
     def __init__(self, config: yarp.ResourceFinder = None):
-        self.mcp = FastMCP("JSON Data Server")
+        self.mcp = MCPServer(name="JSON Data Server", version="0.2.0")
         self.yarp_network = None
         self.info_port = None
         self.info_port_running = False
@@ -616,13 +615,13 @@ The complete JSON data is available as a read-only resource: json://data
                 pass
 
     def run(self, host: str = None, port: int = None):
-        """Run the MCP server using FastMCP's built-in server."""
+        """Run the MCP server over Streamable HTTP."""
         host_i = host if host else self.base_url
         port_i = port if port else self.mcp_port
 
         try:
             logger.info(f"Starting JSON MCP Server on {host_i}:{port_i}")
-            # Get the ASGI app from FastMCP
+            # Get the ASGI app from MCPServer.
             asgi_app = self.mcp.streamable_http_app()
 
             # Run the app with uvicorn

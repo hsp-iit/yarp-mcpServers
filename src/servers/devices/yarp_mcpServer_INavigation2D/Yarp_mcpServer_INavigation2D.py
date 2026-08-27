@@ -20,20 +20,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
-# MCP imports
-from mcp.server.fastmcp import FastMCP, Context
-from mcp.server.models import InitializationOptions
-import uvicorn
-from mcp.types import (
-    Resource,
-    Tool,
-    TextContent,
-    ImageContent,
-    EmbeddedResource,
-    LoggingLevel,
-    ServerNotification,
-    TaskStatusNotification,
-    TaskStatusNotificationParams
+from ...lib_server.YARP_mcpServer_DeviceBase import *
+from ...lib_server.operation_models import (
+    OperationErrorResult,
+    OperationSnapshot,
+    StartOperationResult,
 )
 
 # Try to import YARP
@@ -45,23 +36,14 @@ except ImportError:
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+globLogger = logging.getLogger(__name__)
 
-class Yarp_mcpServer_INavigation2D:
+class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
     """MCP Server for YARP INavigation2D, ILocalization2D, and IMap2D interfaces (Streamable HTTP)"""
 
-    def __init__(self, conf=None):
-        self.mcp = FastMCP("YARP Navigation Server")
-        self.yarp_network = None
-        self.device_driver = None
+    def __init__(self, conf=None, logger: logging.Logger = globLogger, enableExplicitLogging: bool = True):
         self.navigation_interface = None
-        self.is_initialized = False
-        self.tool_descriptions = {}
-        self.info_port = None
-        self.info_port_running = False
-        self.server_name = "navigation"
-        self.base_url = "127.0.0.1"
-        self.mcp_port = 4002
+        server_name = "yarp_mcpServer_INavigation2D"
         self.device_name = "navigation2D_nwc_yarp"
         self.remote_port = "/navigation2D_nws_yarp"
         self.local_port = "/navigation2D_nwc_yarp"
@@ -70,68 +52,25 @@ class Yarp_mcpServer_INavigation2D:
         self.localization_server = "/localization2D_nws_yarp"
 
         if conf:
-            # Handle both dict-like and object-like config
-            if hasattr(conf, 'check') and hasattr(conf, 'find'):
-                # YARP Property object
-                if conf.check("yarp_device"):
-                    self.device_name = conf.find("yarp_device").asString()
-                if conf.check("yarp_remote"):
-                    self.remote_port = conf.find("yarp_remote").asString()
-                if conf.check("yarp_local"):
-                    self.local_port = conf.find("yarp_local").asString()
-                if conf.check("navigation_server"):
-                    self.navigation_server = conf.find("navigation_server").asString()
-                if conf.check("map_locations_server"):
-                    self.map_locations_server = conf.find("map_locations_server").asString()
-                if conf.check("localization_server"):
-                    self.localization_server = conf.find("localization_server").asString()
-                if conf.check("mcp_host"):
-                    self.base_url = conf.find("mcp_host").asString()
-                if conf.check("mcp_port"):
-                    self.mcp_port = conf.find("mcp_port").asInt16()
-            elif isinstance(conf, dict):
-                # Dict-like config
-                self.device_name = conf.get("yarp_device", self.device_name)
-                self.remote_port = conf.get("yarp_remote", self.remote_port)
-                self.local_port = conf.get("yarp_local", self.local_port)
-                self.navigation_server = conf.get("navigation_server", self.navigation_server)
-                self.map_locations_server = conf.get("map_locations_server", self.map_locations_server)
-                self.localization_server = conf.get("localization_server", self.localization_server)
-                self.base_url = conf.get("mcp_host", self.base_url)
-                self.mcp_port = conf.get("mcp_port", self.mcp_port)
+            if not conf.check("device"):
+                conf.setDefault("device",self.device_name)
+            if not conf.check("local"):
+                conf.setDefault("local",self.local_port)
+            if not conf.check("navigation_server"):
+                conf.setDefault("navigation_server",self.navigation_server)
+            if not conf.check("map_locations_server"):
+                conf.setDefault("map_locations_server",self.map_locations_server)
+            if not conf.check("localization_server"):
+                conf.setDefault("localization_server",self.localization_server)
+            if not conf.check("server_name"):
+                conf.setDefault("server_name", server_name)
 
-        self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
-        self.system_prompt_addendum = self._build_system_prompt_addendum()
+        Yarp_mcpServer_DeviceBase.__init__(self, conf, logger, enableExplicitLogging)
 
-        # Notification infrastructure for MCP streaming.
-        # Clients subscribe with subscribe_notifications(); navigation monitor
-        # tasks then broadcast official notifications/tasks/status messages.
-        self.notification_sessions = {}
-        self.notification_lock = threading.Lock()
-        self.task_counter = 0
-        self.task_created_at = {}
-        self.navigation_monitor_tasks = {}
+        self.driver_options.put("navigation_server", conf.find("navigation_server").asString())
+        self.driver_options.put("map_locations_server", conf.find("map_locations_server").asString())
+        self.driver_options.put("localization_server", conf.find("localization_server").asString())
 
-        # Register tools
-        self._register_tools()
-
-    def _new_task_id(self, prefix: str) -> str:
-        """Generate a unique server-side monitoring task ID."""
-        with self.notification_lock:
-            self.task_counter += 1
-            return f"{prefix}_{self.task_counter}_{uuid.uuid4().hex[:8]}"
-
-    def _register_notification_session(self, session: Any) -> str:
-        """Remember a session that wants server-side task notifications."""
-        session_key = str(id(session))
-        with self.notification_lock:
-            self.notification_sessions[session_key] = session
-        return session_key
-
-    def _task_created_time(self, task_id: str) -> datetime:
-        """Return the original creation time for a task notification."""
-        with self.notification_lock:
-            return self.task_created_at.setdefault(task_id, datetime.now(timezone.utc))
 
     def _navigation_status_name(self, status: Any) -> str:
         """Convert a YARP navigation status enum into a stable string."""
@@ -149,364 +88,278 @@ class Yarp_mcpServer_INavigation2D:
         }
         return status_names.get(int(status), f'unknown({int(status)})')
 
-    async def _emit_task_status_to_subscribers(
-        self,
-        task_id: str,
-        status: str,
-        tool: str,
-        data: dict[str, Any] | None = None,
-        status_message: str | None = None,
-        event: str | None = None,
-    ) -> None:
-        """Emit an official MCP task-status notification to subscribed sessions."""
-        created_at = self._task_created_time(task_id)
-        params = TaskStatusNotificationParams(
-            taskId=task_id,
-            status=status,
-            statusMessage=status_message,
-            createdAt=created_at,
-            lastUpdatedAt=datetime.now(timezone.utc),
-            ttl=None,
-            tool=tool,
-            event=event or status,
-            data=data or {},
-        )
-        notification = ServerNotification(TaskStatusNotification(params=params))
-
-        with self.notification_lock:
-            sessions = list(self.notification_sessions.items())
-
-        dead_sessions = []
-        for session_key, session in sessions:
-            try:
-                await session.send_notification(notification)
-            except Exception as e:
-                logger.debug(f"Failed to emit task notification to session {session_key}: {e}")
-                dead_sessions.append(session_key)
-
-        if dead_sessions:
-            with self.notification_lock:
-                for session_key in dead_sessions:
-                    self.notification_sessions.pop(session_key, None)
-
-    async def _emit_tool_snapshot(self, tool: str, data: dict[str, Any]) -> None:
-        """Broadcast a non-terminal snapshot from a synchronous getter tool."""
-        task_id = self._new_task_id(f"{tool}_snapshot")
-        await self._emit_task_status_to_subscribers(
-            task_id=task_id,
-            status="working",
-            tool=tool,
-            data=data,
-            status_message=f"{tool} status update",
-            event="status_changed",
-        )
-        with self.notification_lock:
-            self.task_created_at.pop(task_id, None)
-
-    def _start_navigation_monitor(
-        self,
-        task_id: str,
-        command_tool: str,
-        target_data: dict[str, Any],
-        poll_interval: float = 1.0,
-        timeout: float = 300.0,
-    ) -> None:
-        """Start a background task that notifies when navigation reaches a terminal state."""
-        task = asyncio.create_task(
-            self._navigation_monitor_loop(
-                task_id=task_id,
-                command_tool=command_tool,
-                target_data=target_data,
-                poll_interval=poll_interval,
-                timeout=timeout,
-            )
-        )
-        with self.notification_lock:
-            self.navigation_monitor_tasks[task_id] = task
+    async def _cancel_operation(self, operation_id: str) -> OperationSnapshot:
+        """Stop physical navigation before cancelling its monitoring operation."""
+        operation = await self.operation_registry.get(operation_id)
+        if operation.status == "working" and operation.operation_type.startswith("navigation_"):
+            if not self.is_initialized or self.navigation_interface is None:
+                raise RuntimeError("Navigation system is not initialized; cannot stop the robot")
+            stopped = await self._call_yarp(self.navigation_interface.stopNavigation)
+            if not stopped:
+                raise RuntimeError("YARP rejected the request to stop navigation")
+        return await super()._cancel_operation(operation_id)
 
     async def _navigation_monitor_loop(
         self,
-        task_id: str,
+        operation_id: str,
         command_tool: str,
         target_data: dict[str, Any],
         poll_interval: float,
         timeout: float,
     ) -> None:
-        """Poll navigation status and notify subscribers on goal reached/failure."""
+        """Poll navigation status and update the operation resource."""
         start_time = time.monotonic()
         last_status_name = None
+        seen_active_navigation = False
+        active_statuses = {
+            "preparing_before_move", "moving", "waiting_obstacle", "paused", "thinking",
+        }
         terminal_success = {"goal_reached"}
         terminal_failure = {"aborted", "failing", "error"}
 
         try:
-            await self._emit_task_status_to_subscribers(
-                task_id=task_id,
+            await self.operation_registry.update(
+                operation_id,
                 status="working",
-                tool="get_navigation_status",
-                data={
+                details={
                     **target_data,
                     "command_tool": command_tool,
-                    "status": "command_sent",
+                    "navigation_status": "command_sent",
                 },
                 status_message=f"Navigation command accepted for {command_tool}",
-                event="started",
             )
             await asyncio.sleep(poll_interval)
 
             while True:
                 if not self.is_initialized or self.navigation_interface is None:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="failed",
-                        tool="get_navigation_status",
-                        data={
+                        details={
                             **target_data,
                             "command_tool": command_tool,
-                            "error": "Navigation system not initialized",
                         },
+                        error={"message": "Navigation system not initialized"},
                         status_message="Navigation monitor failed: interface not initialized",
-                        event="failed",
                     )
                     return
 
-                status_code = self.navigation_interface.getNavigationStatus()
+                status_code = await self._call_yarp(self.navigation_interface.getNavigationStatus)
                 status_name = self._navigation_status_name(status_code)
                 data = {
                     **target_data,
                     "command_tool": command_tool,
-                    "status": status_name,
-                    "status_code": int(status_code),
+                    "navigation_status": status_name,
+                    "navigation_status_code": int(status_code),
                 }
 
                 if status_name != last_status_name:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="working",
-                        tool="get_navigation_status",
-                        data=data,
+                        details=data,
                         status_message=f"Navigation status: {status_name}",
-                        event="status_changed",
                     )
                     last_status_name = status_name
 
+                if status_name in active_statuses:
+                    seen_active_navigation = True
+
                 if status_name in terminal_success:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="completed",
-                        tool="get_navigation_status",
-                        data=data,
+                        details=data,
+                        result=data,
                         status_message="Navigation goal reached",
-                        event="complete",
+                    )
+                    return
+
+                # Some navigation implementations transition directly from an
+                # active state to idle instead of retaining goal_reached long
+                # enough for a polling client to observe it.
+                if status_name == "idle" and seen_active_navigation:
+                    await self.operation_registry.update(
+                        operation_id,
+                        status="completed",
+                        details=data,
+                        result=data,
+                        status_message="Navigation completed and returned to idle",
                     )
                     return
 
                 if status_name in terminal_failure:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="failed",
-                        tool="get_navigation_status",
-                        data=data,
+                        details=data,
+                        error={"message": f"Navigation ended with status: {status_name}"},
                         status_message=f"Navigation ended with status: {status_name}",
-                        event="failed",
                     )
                     return
 
                 if timeout > 0 and time.monotonic() - start_time >= timeout:
-                    data["error"] = "timeout"
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
+                    await self.operation_registry.update(
+                        operation_id,
                         status="failed",
-                        tool="get_navigation_status",
-                        data=data,
+                        details=data,
+                        error={"message": "timeout", "timeout_seconds": timeout},
                         status_message=f"Navigation monitor timed out after {timeout:.1f}s",
-                        event="timeout",
                     )
                     return
+
+                self.fancyLog.INFO(f"Navigation monitor {operation_id}: status={status_name}, elapsed={time.monotonic() - start_time:.1f}s")
 
                 await asyncio.sleep(poll_interval)
 
         except asyncio.CancelledError:
-            await self._emit_task_status_to_subscribers(
-                task_id=task_id,
+            await self.operation_registry.update(
+                operation_id,
                 status="cancelled",
-                tool="get_navigation_status",
-                data={
+                details={
                     **target_data,
                     "command_tool": command_tool,
                 },
                 status_message="Navigation monitor cancelled",
-                event="cancelled",
             )
             raise
         except Exception as e:
-            logger.error(f"Navigation monitor {task_id} failed: {e}")
-            await self._emit_task_status_to_subscribers(
-                task_id=task_id,
+            self.fancyLog.ERROR(f"Navigation monitor {operation_id} failed: {e}")
+            await self.operation_registry.update(
+                operation_id,
                 status="failed",
-                tool="get_navigation_status",
-                data={
+                details={
                     **target_data,
                     "command_tool": command_tool,
-                    "error": str(e),
                 },
+                error={"message": str(e)},
                 status_message=f"Navigation monitor failed: {e}",
-                event="failed",
             )
-        finally:
-            with self.notification_lock:
-                self.navigation_monitor_tasks.pop(task_id, None)
 
-    def _register_tools(self):
+    def _register_internal_tools(self):
         """Register MCP tools"""
 
-        @self.mcp.tool()
-        async def subscribe_notifications(ctx: Context) -> dict[str, Any]:
-            """Subscribe this MCP session to server-side navigation task notifications."""
-            session_key = self._register_notification_session(ctx.session)
-            return {
-                "success": True,
-                "session_key": session_key,
-                "message": "Subscribed to navigation server task notifications"
-            }
-
-        @self.mcp.tool()
-        async def goto_target_by_absolute_location(x: float, y: float, theta: float) -> dict[str, Any]:
+        # ===================== NAVIGATION TOOLS =====================
+        @self.mcp.tool(structured_output=True)
+        async def goto_target_by_absolute_location(
+            x: float, y: float, theta: float,
+        ) -> StartOperationResult | OperationErrorResult:
             """Navigate the robot to an absolute location in the map. Coordinates are in meters and theta is in degrees."""
             if not self.is_initialized:
-                return {
-                    "success": False,
-                    "error": "Navigation system not initialized. Call initialize_yarp_navigation first."
-                }
+                return OperationErrorResult(
+                    error="Navigation system not initialized. Call initialize_yarp_navigation first."
+                )
 
             try:
-                task_id = self._new_task_id("nav")
-
                 location = yarp.Map2DLocation()
                 location.x = x
                 location.y = y
                 location.theta = theta
 
-                result = self.navigation_interface.gotoTargetByAbsoluteLocation(location)
+                result = await self._call_yarp(
+                    self.navigation_interface.gotoTargetByAbsoluteLocation, location,
+                )
                 target_data = {
                     "target_x": x,
                     "target_y": y,
                     "target_theta": theta
                 }
 
-                if result:
-                    self._start_navigation_monitor(
-                        task_id=task_id,
-                        command_tool="goto_target_by_absolute_location",
-                        target_data=target_data,
-                    )
-                else:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
-                        status="failed",
-                        tool="get_navigation_status",
-                        data={
-                            **target_data,
-                            "command_tool": "goto_target_by_absolute_location",
-                            "error": "Failed to send navigation command"
-                        },
-                        status_message="Failed to send navigation command",
-                        event="failed",
-                    )
+                if not result:
+                    return OperationErrorResult(error="Failed to send navigation command")
 
-                return {
-                    "success": bool(result),
-                    "task_id": task_id,
-                    "target_x": x,
-                    "target_y": y,
-                    "target_theta": theta,
-                    "message": "Navigation command sent; server-side completion notification is active" if result else "Failed to send navigation command"
-                }
+                operation = await self.operation_registry.create(
+                    "navigation_absolute",
+                    status_message="Absolute navigation command accepted",
+                    details={**target_data, "command_tool": "goto_target_by_absolute_location"},
+                    poll_interval_ms=250,
+                )
+                await self._start_operation_task(operation, self._navigation_monitor_loop(
+                    operation_id=operation.operation_id,
+                    command_tool="goto_target_by_absolute_location",
+                    target_data=target_data,
+                    poll_interval=0.25,
+                    timeout=300.0,
+                ))
+                return StartOperationResult(
+                    operation_id=operation.operation_id,
+                    operation_type=operation.operation_type,
+                    status_uri=operation.status_uri,
+                    poll_interval_ms=operation.poll_interval_ms,
+                    message="Navigation command sent; operation monitoring is active",
+                )
             except Exception as e:
-                logger.error(f"Error in goto_target: {e}")
-                return {
-                    "success": False,
-                    "error": f"Navigation error: {str(e)}"
-                }
+                self.fancyLog.ERROR(f"Error in goto_target: {e}")
+                return OperationErrorResult(error=f"Navigation error: {str(e)}")
 
-        @self.mcp.tool()
-        async def goto_target_by_relative_location(x: float, y: float, theta: float = 0.0) -> dict[str, Any]:
+        @self.mcp.tool(structured_output=True)
+        async def goto_target_by_relative_location(
+            x: float, y: float, theta: float = 0.0,
+        ) -> StartOperationResult | OperationErrorResult:
             """Navigate the robot by a relative displacement from its current location. x and y are in meters, theta is in degrees."""
             if not self.is_initialized:
-                return {
-                    "success": False,
-                    "error": "Navigation system not initialized. Call initialize_yarp_navigation first."
-                }
+                return OperationErrorResult(
+                    error="Navigation system not initialized. Call initialize_yarp_navigation first."
+                )
 
             try:
-                task_id = self._new_task_id("nav_relative")
-                result = self.navigation_interface.gotoTargetByRelativeLocation(x, y, theta)
+                result = await self._call_yarp(
+                    self.navigation_interface.gotoTargetByRelativeLocation, x, y, theta,
+                )
                 target_data = {
                     "relative_x": x,
                     "relative_y": y,
                     "relative_theta": theta
                 }
 
-                if result:
-                    self._start_navigation_monitor(
-                        task_id=task_id,
-                        command_tool="goto_target_by_relative_location",
-                        target_data=target_data,
-                    )
-                else:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
-                        status="failed",
-                        tool="get_navigation_status",
-                        data={
-                            **target_data,
-                            "command_tool": "goto_target_by_relative_location",
-                            "error": "Failed to send relative navigation command"
-                        },
-                        status_message="Failed to send relative navigation command",
-                        event="failed",
-                    )
+                if not result:
+                    return OperationErrorResult(error="Failed to send relative navigation command")
 
-                return {
-                    "success": bool(result),
-                    "task_id": task_id,
-                    "relative_x": x,
-                    "relative_y": y,
-                    "relative_theta": theta,
-                    "message": "Relative navigation command sent; server-side completion notification is active" if result else "Failed to send relative navigation command"
-                }
+                operation = await self.operation_registry.create(
+                    "navigation_relative",
+                    status_message="Relative navigation command accepted",
+                    details={**target_data, "command_tool": "goto_target_by_relative_location"},
+                    poll_interval_ms=250,
+                )
+                await self._start_operation_task(operation, self._navigation_monitor_loop(
+                    operation_id=operation.operation_id,
+                    command_tool="goto_target_by_relative_location",
+                    target_data=target_data,
+                    poll_interval=0.25,
+                    timeout=300.0,
+                ))
+                return StartOperationResult(
+                    operation_id=operation.operation_id,
+                    operation_type=operation.operation_type,
+                    status_uri=operation.status_uri,
+                    poll_interval_ms=operation.poll_interval_ms,
+                    message="Relative navigation command sent; operation monitoring is active",
+                )
             except Exception as e:
-                logger.error(f"Error in goto_target_by_relative_location: {e}")
-                return {
-                    "success": False,
-                    "error": f"Relative navigation error: {str(e)}"
-                }
+                self.fancyLog.ERROR(f"Error in goto_target_by_relative_location: {e}")
+                return OperationErrorResult(error=f"Relative navigation error: {str(e)}")
 
-        @self.mcp.tool()
-        async def follow_path(waypoints: list[dict[str, float]]) -> dict[str, Any]:
+        @self.mcp.tool(structured_output=True)
+        async def follow_path(
+            waypoints: list[dict[str, float]],
+        ) -> StartOperationResult | OperationErrorResult:
             """Follow a path defined by a sequence of waypoints. Each waypoint is a dict with x, y, and theta (in degrees)."""
             if not self.is_initialized:
-                return {
-                    "success": False,
-                    "error": "Navigation system not initialized. Call initialize_yarp_navigation first."
-                }
+                return OperationErrorResult(
+                    error="Navigation system not initialized. Call initialize_yarp_navigation first."
+                )
 
             if not waypoints or len(waypoints) == 0:
-                return {
-                    "success": False,
-                    "error": "At least one waypoint is required"
-                }
+                return OperationErrorResult(error="At least one waypoint is required")
 
             try:
-                task_id = self._new_task_id("path")
-
                 # Create a vector of locations
                 locations = yarp.Map2DLocationVector()
                 for wp in waypoints:
                     if 'x' not in wp or 'y' not in wp:
-                        return {
-                            "success": False,
-                            "error": "Each waypoint must have 'x' and 'y' coordinates"
-                        }
+                        return OperationErrorResult(
+                            error="Each waypoint must have 'x' and 'y' coordinates"
+                        )
 
                     loc = yarp.Map2DLocation()
                     loc.x = wp['x']
@@ -518,44 +371,38 @@ class Yarp_mcpServer_INavigation2D:
                 path = yarp.Map2DPath()
                 path.waypoints = locations
 
-                result = self.navigation_interface.followPath(path)
+                result = await self._call_yarp(self.navigation_interface.followPath, path)
                 target_data = {
                     "waypoints_count": len(waypoints),
                     "waypoints": waypoints
                 }
 
-                if result:
-                    self._start_navigation_monitor(
-                        task_id=task_id,
-                        command_tool="follow_path",
-                        target_data=target_data,
-                    )
-                else:
-                    await self._emit_task_status_to_subscribers(
-                        task_id=task_id,
-                        status="failed",
-                        tool="get_navigation_status",
-                        data={
-                            **target_data,
-                            "command_tool": "follow_path",
-                            "error": "Failed to send path command"
-                        },
-                        status_message="Failed to send path command",
-                        event="failed",
-                    )
+                if not result:
+                    return OperationErrorResult(error="Failed to send path command")
 
-                return {
-                    "success": bool(result),
-                    "task_id": task_id,
-                    "waypoints_count": len(waypoints),
-                    "message": "Path navigation command sent; server-side completion notification is active" if result else "Failed to send path command"
-                }
+                operation = await self.operation_registry.create(
+                    "navigation_path",
+                    status_message="Path navigation command accepted",
+                    details={**target_data, "command_tool": "follow_path"},
+                    poll_interval_ms=250,
+                )
+                await self._start_operation_task(operation, self._navigation_monitor_loop(
+                    operation_id=operation.operation_id,
+                    command_tool="follow_path",
+                    target_data=target_data,
+                    poll_interval=0.25,
+                    timeout=300.0,
+                ))
+                return StartOperationResult(
+                    operation_id=operation.operation_id,
+                    operation_type=operation.operation_type,
+                    status_uri=operation.status_uri,
+                    poll_interval_ms=operation.poll_interval_ms,
+                    message="Path navigation command sent; operation monitoring is active",
+                )
             except Exception as e:
-                logger.error(f"Error in follow_path: {e}")
-                return {
-                    "success": False,
-                    "error": f"Path following error: {str(e)}"
-                }
+                self.fancyLog.ERROR(f"Error in follow_path: {e}")
+                return OperationErrorResult(error=f"Path following error: {str(e)}")
 
         @self.mcp.tool()
         async def get_current_position() -> dict[str, Any]:
@@ -569,7 +416,9 @@ class Yarp_mcpServer_INavigation2D:
             try:
                 # Use the reference parameter version which works better with SWIG
                 location = yarp.Map2DLocation()
-                result = self.navigation_interface.getCurrentPosition(location)
+                result = await self._call_yarp(
+                    self.navigation_interface.getCurrentPosition, location,
+                )
 
                 if result:
                     return {
@@ -585,7 +434,7 @@ class Yarp_mcpServer_INavigation2D:
                         "error": "Failed to get current position"
                     }
             except Exception as e:
-                logger.error(f"Error in get_current_position: {e}")
+                self.fancyLog.ERROR(f"Error in get_current_position: {e}")
                 return {
                     "success": False,
                     "error": f"Position retrieval error: {str(e)}"
@@ -610,16 +459,8 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                status = self.navigation_interface.getNavigationStatus()
+                status = await self._call_yarp(self.navigation_interface.getNavigationStatus)
                 status_name = self._navigation_status_name(status)
-
-                await self._emit_tool_snapshot(
-                    "get_navigation_status",
-                    {
-                        "status": status_name,
-                        "status_code": int(status)
-                    }
-                )
 
                 return {
                     "success": True,
@@ -627,7 +468,7 @@ class Yarp_mcpServer_INavigation2D:
                     "status_code": int(status)
                 }
             except Exception as e:
-                logger.error(f"Error in get_navigation_status: {e}")
+                self.fancyLog.ERROR(f"Error in get_navigation_status: {e}")
                 return {
                     "success": False,
                     "error": f"Status retrieval error: {str(e)}"
@@ -643,14 +484,20 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.stopNavigation()
+                result = await self._call_yarp(self.navigation_interface.stopNavigation)
+
+                if result:
+                    active_operations = await self.operation_registry.list(active_only=True)
+                    for operation in active_operations:
+                        if operation.operation_type.startswith("navigation_"):
+                            await self.operation_registry.cancel(operation.operation_id)
 
                 return {
                     "success": bool(result),
                     "message": "Navigation stopped successfully" if result else "Failed to stop navigation"
                 }
             except Exception as e:
-                logger.error(f"Error in stop_navigation: {e}")
+                self.fancyLog.ERROR(f"Error in stop_navigation: {e}")
                 return {
                     "success": False,
                     "error": f"Stop error: {str(e)}"
@@ -666,14 +513,14 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.suspendNavigation()
+                result = await self._call_yarp(self.navigation_interface.suspendNavigation)
 
                 return {
                     "success": bool(result),
                     "message": "Navigation suspended successfully" if result else "Failed to suspend navigation"
                 }
             except Exception as e:
-                logger.error(f"Error in suspend_navigation: {e}")
+                self.fancyLog.ERROR(f"Error in suspend_navigation: {e}")
                 return {
                     "success": False,
                     "error": f"Suspend error: {str(e)}"
@@ -689,80 +536,18 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.resumeNavigation()
+                result = await self._call_yarp(self.navigation_interface.resumeNavigation)
 
                 return {
                     "success": bool(result),
                     "message": "Navigation resumed successfully" if result else "Failed to resume navigation"
                 }
             except Exception as e:
-                logger.error(f"Error in resume_navigation: {e}")
+                self.fancyLog.ERROR(f"Error in resume_navigation: {e}")
                 return {
                     "success": False,
                     "error": f"Resume error: {str(e)}"
                 }
-
-        # @self.mcp.tool()
-        # async def apply_velocity_command(x_vel: float, y_vel: float, theta_vel: float, timeout: float = 0.1) -> dict[str, Any]:
-        #     """Apply a velocity command to the robot. x_vel and y_vel in m/s, theta_vel in deg/s."""
-        #     if not self.is_initialized:
-        #         return {
-        #             "success": False,
-        #             "error": "Navigation system not initialized. Call initialize_yarp_navigation first."
-        #         }
-        #
-        #     try:
-        #         result = self.navigation_interface.applyVelocityCommand(x_vel, y_vel, theta_vel, timeout)
-        #
-        #         return {
-        #             "success": bool(result),
-        #             "x_velocity": x_vel,
-        #             "y_velocity": y_vel,
-        #             "theta_velocity": theta_vel,
-        #             "timeout": timeout,
-        #             "message": "Velocity command applied" if result else "Failed to apply velocity command"
-        #         }
-        #     except Exception as e:
-        #         logger.error(f"Error in apply_velocity_command: {e}")
-        #         return {
-        #             "success": False,
-        #             "error": f"Velocity command error: {str(e)}"
-        #         }
-
-        # @self.mcp.tool()
-        # async def get_last_velocity_command() -> dict[str, Any]:
-        #     """Get the last applied velocity command."""
-        #     if not self.is_initialized:
-        #         return {
-        #             "success": False,
-        #             "error": "Navigation system not initialized. Call initialize_yarp_navigation first."
-        #         }
-        #
-        #     try:
-        #         x_vel = yarp.DVector(1)
-        #         y_vel = yarp.DVector(1)
-        #         theta_vel = yarp.DVector(1)
-        #
-        #         result = self.navigation_interface.getLastVelocityCommand(x_vel, y_vel, theta_vel)
-        #
-        #         if result:
-        #             return {
-        #                 "success": True,
-        #                 "x_velocity": float(x_vel[0]),
-        #                 "y_velocity": float(y_vel[0]),
-        #                 "theta_velocity": float(theta_vel[0])
-        #             }
-        #         else:
-        #             return {
-        #                 "success": False,
-        #                 "error": "Failed to get last velocity command"
-        #             }
-        #     except Exception as e:
-        #         logger.error(f"Error in get_last_velocity_command: {e}")
-        #         return {
-        #             "success": False,
-        #             "error": f"Velocity query error: {str(e)}"
-        #         }
 
         @self.mcp.tool()
         async def get_absolute_target_location() -> dict[str, Any]:
@@ -776,7 +561,9 @@ class Yarp_mcpServer_INavigation2D:
             try:
                 # Use the reference parameter version which works better with SWIG
                 location = yarp.Map2DLocation()
-                result = self.navigation_interface.getAbsoluteLocationOfCurrentTarget(location)
+                result = await self._call_yarp(
+                    self.navigation_interface.getAbsoluteLocationOfCurrentTarget, location,
+                )
 
                 if result:
                     return {
@@ -792,7 +579,7 @@ class Yarp_mcpServer_INavigation2D:
                         "error": "No current target"
                     }
             except Exception as e:
-                logger.error(f"Error in get_absolute_target_location: {e}")
+                self.fancyLog.ERROR(f"Error in get_absolute_target_location: {e}")
                 return {
                     "success": False,
                     "error": f"Target location query error: {str(e)}"
@@ -823,7 +610,7 @@ class Yarp_mcpServer_INavigation2D:
                     "status": status
                 }
             except Exception as e:
-                logger.error(f"Error checking connection status: {e}")
+                self.fancyLog.ERROR(f"Error checking connection status: {e}")
                 return {
                     "success": False,
                     "error": f"Connection status error: {str(e)}"
@@ -833,11 +620,7 @@ class Yarp_mcpServer_INavigation2D:
         async def cleanup_yarp_navigation() -> dict[str, Any]:
             """Shutdown the YARP navigation and free all system resources."""
             try:
-                with self.notification_lock:
-                    monitor_tasks = list(self.navigation_monitor_tasks.values())
-                    self.navigation_monitor_tasks.clear()
-                for task in monitor_tasks:
-                    task.cancel()
+                await self._cleanup_operations()
 
                 if self.device_driver:
                     self.device_driver.close()
@@ -855,7 +638,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Navigation system cleaned up successfully"
                 }
             except Exception as e:
-                logger.error(f"Error during cleanup: {e}")
+                self.fancyLog.ERROR(f"Error during cleanup: {e}")
                 return {
                     "success": False,
                     "error": f"Cleanup error: {str(e)}"
@@ -873,14 +656,16 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.startLocalizationService()
+                result = await self._call_yarp(
+                    self.navigation_interface.startLocalizationService
+                )
 
                 return {
                     "success": bool(result),
                     "message": "Localization service started" if result else "Failed to start localization service"
                 }
             except Exception as e:
-                logger.error(f"Error in start_localization_service: {e}")
+                self.fancyLog.ERROR(f"Error in start_localization_service: {e}")
                 return {
                     "success": False,
                     "error": f"Localization start error: {str(e)}"
@@ -896,14 +681,16 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.stopLocalizationService()
+                result = await self._call_yarp(
+                    self.navigation_interface.stopLocalizationService
+                )
 
                 return {
                     "success": bool(result),
                     "message": "Localization service stopped" if result else "Failed to stop localization service"
                 }
             except Exception as e:
-                logger.error(f"Error in stop_localization_service: {e}")
+                self.fancyLog.ERROR(f"Error in stop_localization_service: {e}")
                 return {
                     "success": False,
                     "error": f"Localization stop error: {str(e)}"
@@ -919,7 +706,9 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                status = self.navigation_interface.getLocalizationStatus()
+                status = await self._call_yarp(
+                    self.navigation_interface.getLocalizationStatus
+                )
 
                 status_names = {
                     0: 'not_yet_localized',
@@ -935,7 +724,7 @@ class Yarp_mcpServer_INavigation2D:
                     "status_code": int(status)
                 }
             except Exception as e:
-                logger.error(f"Error in get_localization_status: {e}")
+                self.fancyLog.ERROR(f"Error in get_localization_status: {e}")
                 return {
                     "success": False,
                     "error": f"Localization status error: {str(e)}"
@@ -952,7 +741,9 @@ class Yarp_mcpServer_INavigation2D:
 
             try:
                 poses = yarp.Map2DLocationVector()
-                result = self.navigation_interface.getEstimatedPoses(poses)
+                result = await self._call_yarp(
+                    self.navigation_interface.getEstimatedPoses, poses,
+                )
 
                 poses_list = []
                 for i in range(poses.size()):
@@ -970,7 +761,7 @@ class Yarp_mcpServer_INavigation2D:
                     "pose_count": len(poses_list)
                 }
             except Exception as e:
-                logger.error(f"Error in get_estimated_poses: {e}")
+                self.fancyLog.ERROR(f"Error in get_estimated_poses: {e}")
                 return {
                     "success": False,
                     "error": f"Pose estimation error: {str(e)}"
@@ -993,7 +784,10 @@ class Yarp_mcpServer_INavigation2D:
                 vy = yarp.DVector(1)
                 vtheta = yarp.DVector(1)
 
-                result = self.navigation_interface.getEstimatedOdometry(x_odom, y_odom, theta_odom, vx, vy, vtheta)
+                result = await self._call_yarp(
+                    self.navigation_interface.getEstimatedOdometry,
+                    x_odom, y_odom, theta_odom, vx, vy, vtheta,
+                )
 
                 if result:
                     return {
@@ -1011,7 +805,7 @@ class Yarp_mcpServer_INavigation2D:
                         "error": "Failed to get odometry data"
                     }
             except Exception as e:
-                logger.error(f"Error in get_estimated_odometry: {e}")
+                self.fancyLog.ERROR(f"Error in get_estimated_odometry: {e}")
                 return {
                     "success": False,
                     "error": f"Odometry retrieval error: {str(e)}"
@@ -1033,7 +827,9 @@ class Yarp_mcpServer_INavigation2D:
                 location.theta = theta
                 location.map_id = map_id
 
-                result = self.navigation_interface.setInitialPose(location)
+                result = await self._call_yarp(
+                    self.navigation_interface.setInitialPose, location,
+                )
 
                 return {
                     "success": bool(result),
@@ -1044,7 +840,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Initial pose set successfully" if result else "Failed to set initial pose"
                 }
             except Exception as e:
-                logger.error(f"Error in set_initial_pose: {e}")
+                self.fancyLog.ERROR(f"Error in set_initial_pose: {e}")
                 return {
                     "success": False,
                     "error": f"Set initial pose error: {str(e)}"
@@ -1068,7 +864,9 @@ class Yarp_mcpServer_INavigation2D:
                 location.theta = theta
                 location.map_id = map_id
 
-                result = self.navigation_interface.storeLocation(location_name, location)
+                result = await self._call_yarp(
+                    self.navigation_interface.storeLocation, location_name, location,
+                )
 
                 return {
                     "success": bool(result),
@@ -1079,7 +877,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Location stored successfully" if result else "Failed to store location"
                 }
             except Exception as e:
-                logger.error(f"Error in store_location: {e}")
+                self.fancyLog.ERROR(f"Error in store_location: {e}")
                 return {
                     "success": False,
                     "error": f"Store location error: {str(e)}"
@@ -1096,7 +894,9 @@ class Yarp_mcpServer_INavigation2D:
 
             try:
                 location = yarp.Map2DLocation()
-                result = self.navigation_interface.getLocation(location_name, location)
+                result = await self._call_yarp(
+                    self.navigation_interface.getLocation, location_name, location,
+                )
 
                 if result:
                     return {
@@ -1113,7 +913,7 @@ class Yarp_mcpServer_INavigation2D:
                         "error": f"Location '{location_name}' not found"
                     }
             except Exception as e:
-                logger.error(f"Error in get_location: {e}")
+                self.fancyLog.ERROR(f"Error in get_location: {e}")
                 return {
                     "success": False,
                     "error": f"Get location error: {str(e)}"
@@ -1129,7 +929,9 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                locations = self.navigation_interface.getLocationsList()
+                locations = await self._call_yarp(
+                    self.navigation_interface.getLocationsList
+                )
                 locations = [loc for loc in locations]
 
                 if True:
@@ -1144,7 +946,7 @@ class Yarp_mcpServer_INavigation2D:
                         "error": "Failed to get locations list"
                     }
             except Exception as e:
-                logger.error(f"Error in get_locations_list: {e}")
+                self.fancyLog.ERROR(f"Error in get_locations_list: {e}")
                 return {
                     "success": False,
                     "error": f"Get locations list error: {str(e)}"
@@ -1160,7 +962,9 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.deleteLocation(location_name)
+                result = await self._call_yarp(
+                    self.navigation_interface.deleteLocation, location_name,
+                )
 
                 return {
                     "success": bool(result),
@@ -1168,7 +972,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Location deleted successfully" if result else "Failed to delete location"
                 }
             except Exception as e:
-                logger.error(f"Error in delete_location: {e}")
+                self.fancyLog.ERROR(f"Error in delete_location: {e}")
                 return {
                     "success": False,
                     "error": f"Delete location error: {str(e)}"
@@ -1184,7 +988,9 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.renameLocation(original_name, new_name)
+                result = await self._call_yarp(
+                    self.navigation_interface.renameLocation, original_name, new_name,
+                )
 
                 return {
                     "success": bool(result),
@@ -1193,7 +999,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Location renamed successfully" if result else "Failed to rename location"
                 }
             except Exception as e:
-                logger.error(f"Error in rename_location: {e}")
+                self.fancyLog.ERROR(f"Error in rename_location: {e}")
                 return {
                     "success": False,
                     "error": f"Rename location error: {str(e)}"
@@ -1220,7 +1026,9 @@ class Yarp_mcpServer_INavigation2D:
                 area.points.push_back(point1)
                 area.points.push_back(point2)
 
-                result = self.navigation_interface.storeArea(area_name, area)
+                result = await self._call_yarp(
+                    self.navigation_interface.storeArea, area_name, area,
+                )
 
                 return {
                     "success": bool(result),
@@ -1232,7 +1040,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Area stored successfully" if result else "Failed to store area"
                 }
             except Exception as e:
-                logger.error(f"Error in store_area: {e}")
+                self.fancyLog.ERROR(f"Error in store_area: {e}")
                 return {
                     "success": False,
                     "error": f"Store area error: {str(e)}"
@@ -1249,7 +1057,9 @@ class Yarp_mcpServer_INavigation2D:
 
             try:
                 area = yarp.Map2DArea()
-                result = self.navigation_interface.getArea(area_name, area)
+                result = await self._call_yarp(
+                    self.navigation_interface.getArea, area_name, area,
+                )
 
                 if result:
                     points = []
@@ -1270,7 +1080,7 @@ class Yarp_mcpServer_INavigation2D:
                         "error": f"Area '{area_name}' not found"
                     }
             except Exception as e:
-                logger.error(f"Error in get_area: {e}")
+                self.fancyLog.ERROR(f"Error in get_area: {e}")
                 return {
                     "success": False,
                     "error": f"Get area error: {str(e)}"
@@ -1286,7 +1096,7 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                areas = self.navigation_interface.getAreasList()
+                areas = await self._call_yarp(self.navigation_interface.getAreasList)
                 areas = [area for area in areas]
 
                 if True:
@@ -1301,7 +1111,7 @@ class Yarp_mcpServer_INavigation2D:
                         "error": "Failed to get areas list"
                     }
             except Exception as e:
-                logger.error(f"Error in get_areas_list: {e}")
+                self.fancyLog.ERROR(f"Error in get_areas_list: {e}")
                 return {
                     "success": False,
                     "error": f"Get areas list error: {str(e)}"
@@ -1317,7 +1127,9 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.deleteArea(area_name)
+                result = await self._call_yarp(
+                    self.navigation_interface.deleteArea, area_name,
+                )
 
                 return {
                     "success": bool(result),
@@ -1325,7 +1137,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Area deleted successfully" if result else "Failed to delete area"
                 }
             except Exception as e:
-                logger.error(f"Error in delete_area: {e}")
+                self.fancyLog.ERROR(f"Error in delete_area: {e}")
                 return {
                     "success": False,
                     "error": f"Delete area error: {str(e)}"
@@ -1342,7 +1154,9 @@ class Yarp_mcpServer_INavigation2D:
 
             try:
                 is_inside = False
-                result = self.navigation_interface.checkInsideArea(area_name, is_inside)
+                result = await self._call_yarp(
+                    self.navigation_interface.checkInsideArea, area_name, is_inside,
+                )
 
                 return {
                     "success": bool(result),
@@ -1350,7 +1164,7 @@ class Yarp_mcpServer_INavigation2D:
                     "is_inside": is_inside
                 }
             except Exception as e:
-                logger.error(f"Error in check_inside_area: {e}")
+                self.fancyLog.ERROR(f"Error in check_inside_area: {e}")
                 return {
                     "success": False,
                     "error": f"Check inside area error: {str(e)}"
@@ -1366,7 +1180,9 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.storeCurrentPosition(location_name)
+                result = await self._call_yarp(
+                    self.navigation_interface.storeCurrentPosition, location_name,
+                )
 
                 return {
                     "success": bool(result),
@@ -1374,7 +1190,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Current position stored successfully" if result else "Failed to store current position"
                 }
             except Exception as e:
-                logger.error(f"Error in store_current_position: {e}")
+                self.fancyLog.ERROR(f"Error in store_current_position: {e}")
                 return {
                     "success": False,
                     "error": f"Store current position error: {str(e)}"
@@ -1390,7 +1206,9 @@ class Yarp_mcpServer_INavigation2D:
                 }
 
             try:
-                result = self.navigation_interface.saveLocationsAndExtras(file_name)
+                result = await self._call_yarp(
+                    self.navigation_interface.saveLocationsAndExtras, file_name,
+                )
 
                 return {
                     "success": bool(result),
@@ -1398,7 +1216,7 @@ class Yarp_mcpServer_INavigation2D:
                     "message": "Locations and extras saved successfully" if result else "Failed to save locations and extras"
                 }
             except Exception as e:
-                logger.error(f"Error in save_locations_and_extras: {e}")
+                self.fancyLog.ERROR(f"Error in save_locations_and_extras: {e}")
                 return {
                     "success": False,
                     "error": f"Save locations and extras error: {str(e)}"
@@ -1446,10 +1264,9 @@ COORDINATE SYSTEM & ORIENTATION:
 MONITORING FOR NAVIGATION (CRITICAL):
 When the user asks you to navigate somewhere, ALWAYS follow this pattern:
   1. Call goto_target_by_absolute_location() or goto_target_by_relative_location()
-  2. The navigation server automatically starts a server-side MCP task notification
-     for the returned task_id
-  3. Tell the user you're starting navigation and will notify them when complete
-  4. DO NOT wait for the navigation to complete - let server-side monitoring run in the background
+  2. Keep the returned operation_id and status_uri
+  3. Tell the user navigation started and the operation is monitored automatically
+  4. Use get_operation_status() if an explicit status check is requested
 
 Example Navigation with Monitoring:
   User: "Navigate to the kitchen (x=5, y=3)"
@@ -1472,80 +1289,18 @@ Example Relative Navigation:
   → Compute: new_x = current_x + 2.0 * cos(theta_radians), new_y = current_y + 2.0 * sin(theta_radians)
   → Call: goto_target_by_absolute_location(x=new_x, y=new_y, theta=current_theta)
   → Response: "Moving forward 2 meters with monitoring enabled. I'll notify you when complete."
-═════════════════════════════════════════════════════════════════════════════════"""
-
-
-    def _start_info_port(self):
-        """Start YARP RPC port for tool information"""
-        try:
-            # Initialize YARP network if not already done
-            if not yarp.Network.checkNetwork():
-                yarp.Network.init()
-
-            # Create and open the RPC port
-            self.info_port = yarp.RpcServer()
-            port_name = "/mcp_server/navigation/info:o"
-
-            if not self.info_port.open(port_name):
-                logger.warning(f"Failed to open info port {port_name}")
-                self.info_port = None
-                return
-
-            logger.info(f"Opened YARP info port at {port_name}")
-            self.info_port_running = True
-
-            # Start listening for RPC commands in a background thread
-            def rpc_loop():
-                while self.info_port_running:
-                    try:
-                        cmd = yarp.Bottle()
-                        reply = yarp.Bottle()
-
-                        if self.info_port.read(cmd, True):
-                            cmd_str = cmd.toString()
-                            print(f"Received RPC command: {cmd_str}")
-
-                            if "get_name" in cmd_str:
-                                # Return the server name
-                                reply.addString(self.server_name)
-                                self.info_port.reply(reply)
-                            elif "get_mcp_url" in cmd_str:
-                                # Return the MCP server URL
-                                reply.addString(self.mcp_url)
-                                self.info_port.reply(reply)
-                            elif "get_system_prompt_addendum" in cmd_str:
-                                # Return the system prompt addendum
-                                reply.addString(self.system_prompt_addendum)
-                                self.info_port.reply(reply)
-                    except Exception as e:
-                        logger.debug(f"RPC port error: {e}")
-
-                    # Small sleep to prevent busy waiting
-                    time.sleep(0.01)
-
-            # Start the background thread as a daemon
-            rpc_thread = threading.Thread(target=rpc_loop, daemon=True)
-            rpc_thread.start()
-
-        except Exception as e:
-            logger.error(f"Error starting info port: {e}")
+═════════════════════════════════════════════════════════════════════════════════""".lstrip("\n")
 
     def __del__(self):
         """Destructor to ensure cleanup"""
         self.info_port_running = False
-        with self.notification_lock:
-            monitor_tasks = list(self.navigation_monitor_tasks.values())
-            self.navigation_monitor_tasks.clear()
-        for task in monitor_tasks:
-            task.cancel()
-
         if self.info_port:
             try:
                 self.info_port.close()
             except Exception as e:
-                logger.warning(f"Error closing info port: {e}")
+                self.fancyLog.WARNING(f"Error closing info port: {e}")
 
-        if self.is_initialized:
+        if self.navigation_interface:
             try:
                 if self.device_driver:
                     self.device_driver.close()
@@ -1556,58 +1311,23 @@ Example Relative Navigation:
                     yarp.Network.fini()
                     self.yarp_network = None
             except Exception as e:
-                logger.warning(f"Error during cleanup: {e}")
+                self.fancyLog.WARNING(f"Error during cleanup: {e}")
 
-    def run(self, host: str = None, port: int = None):
-        """
-        Run the MCP server using uvicorn.
-        """
-        # Initialize YARP network
-        yarp.Network.init()
-        self.yarp_network = yarp.Network()
-
-        # Check if YARP server is running
-        if not self.yarp_network.checkNetwork():
-            logger.error("YARP network not available. Please start yarpserver.")
-            return
-
-        # Create PolyDriver for navigation
-        options = yarp.Property()
-        options.put("device", self.device_name)
-        options.put("navigation_server", self.navigation_server)
-        options.put("map_locations_server", self.map_locations_server)
-        options.put("localization_server", self.localization_server)
-        options.put("local", self.local_port)
-
-        self.device_driver = yarp.PolyDriver(options)
-
-        if not self.device_driver.isValid():
-            logger.error(f"Failed to create {self.device_name} device. Check if the device is available.")
-            return
+    def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool:
 
         # Get INavigation2D interface
-        self.navigation_interface = self.device_driver.viewINavigation2D()
+        self.navigation_interface = devDriver.viewINavigation2D()
 
         if self.navigation_interface is None:
-            logger.error("Failed to get INavigation2D interface")
-            return
+            self.fancyLog.ERROR("Failed to get INavigation2D interface")
+            return False
 
-        self.is_initialized = True
+        return True
 
-        host_i = host if host else self.base_url
-        port_i = port if port else self.mcp_port
-        try:
-            logger.info(f"Starting YARP Navigation MCP Server on {host_i}:{port_i}")
-            # Get the ASGI app from FastMCP
-            asgi_app = self.mcp.streamable_http_app()
-            # Run the app with uvicorn
-            uvicorn.run(asgi_app, host=host_i, port=port_i)
-        except Exception as e:
-            logger.error(f"Server error: {e}")
-            sys.exit(1)
 
 if __name__ == "__main__":
     config = yarp.ResourceFinder()
     config.configure(sys.argv)
+
     server = Yarp_mcpServer_INavigation2D(config)
     server.run()

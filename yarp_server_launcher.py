@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys
 import yarp
 import inspect
@@ -59,7 +60,8 @@ if __name__ == "__main__":
             device_params = config_data.findGroup(device_name)
             server_class = AvailableServers.get(serv_type)
             if server_class:
-                server_instance = server_class(device_params)
+                device_rf = parser.property_to_resource_finder(device_params)
+                server_instance = server_class(device_rf)
                 server_instances.append(server_instance)
 
                 # Create thread for each server
