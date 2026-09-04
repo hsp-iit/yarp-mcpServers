@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import asyncio
 import sys
 import yarp
 import inspect
@@ -32,21 +33,30 @@ if __name__ == "__main__":
     shutdown_event = threading.Event()
 
     def signal_handler(signum, frame):
-        """Handle termination signals (SIGTERM, SIGKILL)"""
+        """Handle termination signals and cleanly stop every server."""
+        if shutdown_event.is_set():
+            return
+
         print(f"\nReceived signal {signum}. Shutting down servers...")
         shutdown_event.set()
 
-        # Delete server instances to trigger __del__ cleanup
-        for server_instance in server_instances:
-            try:
-                print(f"Cleaning up {server_instance.__class__.__name__}...")
-                del server_instance
-            except Exception as e:
-                print(f"Error cleaning up server: {e}")
+        async def cleanup_servers():
+            results = await asyncio.gather(
+                *(server.cleanup() for server in server_instances),
+                return_exceptions=True,
+            )
+            for server, result in zip(server_instances, results):
+                if isinstance(result, Exception):
+                    print(f"Error cleaning up {server.__class__.__name__}: {result}")
+                else:
+                    print(f"Cleaned up {server.__class__.__name__}")
 
+        asyncio.run(cleanup_servers())
+
+        for thread in server_threads:
+            thread.join(timeout=5)
         server_instances.clear()
 
-        # Exit immediately - daemon threads will be forcefully terminated
         print("All servers shut down.")
         sys.exit(0)
 
@@ -83,5 +93,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nInterrupted. Shutting down...")
         signal_handler(signal.SIGINT, None)
-
 
