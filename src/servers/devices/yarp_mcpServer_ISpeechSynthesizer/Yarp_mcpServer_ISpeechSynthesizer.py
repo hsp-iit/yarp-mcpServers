@@ -192,43 +192,6 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                     "error": f"Status check failed: {str(e)}"
                 }
 
-        @self.mcp.tool()
-        async def cleanup_yarp_speech() -> dict[str, Any]:
-            """Shutdown the YARP speech synthesizer and free all system resources. Use this when you want to clean up the speech system."""
-            # ... (kept your implementation unchanged)
-            try:
-                cleanup_status = []
-
-                if self.output_port:
-                    self.output_port.close()
-                    cleanup_status.append("Output port closed")
-                    self.output_port = None
-
-                if self.device_driver:
-                    self.device_driver.close()
-                    cleanup_status.append("Device driver closed")
-                    self.device_driver = None
-
-                self.speech_interface = None
-
-                if self.yarp_network:
-                    yarp.Network.fini()
-                    cleanup_status.append("YARP network finalized")
-                    self.yarp_network = None
-
-                self.is_initialized = False
-
-                return {
-                    "success": True,
-                    "cleanup_actions": cleanup_status
-                }
-
-            except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"Cleanup failed: {str(e)}"
-                }
-
         # Start YARP RPC info port in a background thread
         self._start_info_port()
 
@@ -292,25 +255,19 @@ ENFORCEMENT: These rules are absolute and non-negotiable
 Failure to follow this pattern is a system error. You MUST call synthesize_speech for every response.
 This is your core function. Act accordingly.""".lstrip("\n")
 
-    def __del__(self):
-        """Destructor to ensure cleanup"""
-        self.info_port_running = False
-        if self.info_port:
-            try:
-                self.info_port.close()
-            except:
-                pass
-
-        if self.is_initialized:
-            try:
-                if self.output_port:
-                    self.output_port.close()
-                if self.device_driver:
-                    self.device_driver.close()
-                if self.yarp_network:
-                    yarp.Network.fini()
-            except:
-                pass
+    async def cleanup(self) -> None:
+        """Stop speech operations and release the YARP resources."""
+        self.fancyLog.INFO("Cleaning up YARP speech synthesizer resources...")
+        try:
+            await self._cleanup_operations()
+        finally:
+            self._close_resource("output_port", "speech output port")
+            self._close_resource("device_driver", "speech device driver")
+            self.speech_interface = None
+            self._finalize_yarp_network()
+            self.is_initialized = False
+            self._cleanup_base_resources()
+        self.fancyLog.INFO("YARP speech synthesizer resources cleaned up successfully.")
 
     def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool:
 

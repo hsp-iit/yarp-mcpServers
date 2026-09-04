@@ -65,15 +65,12 @@ Parameters:
 #### `get_speech_status`
 Get current status of the speech synthesis system.
 
-#### `cleanup_yarp`
-Clean up YARP resources and close connections.
-
 ## Example Usage Sequence
 
 1. First, call `initialize_yarp` to set up the YARP connection
 2. Call `synthesize_speech` with your text to generate audio
 3. Optionally call `get_speech_status` to check system status
-4. Call `cleanup_yarp` when done to clean up resources
+4. Stop the server normally; the launcher cleans up its YARP resources
 
 ## YARP Network Architecture
 

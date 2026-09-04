@@ -489,40 +489,6 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                     "error": f"Status check failed: {str(e)}"
                 }
 
-        @self.mcp.tool()
-        async def cleanup_yarp_battery() -> dict[str, Any]:
-            """Shutdown the YARP battery monitoring and free all system resources. Use this when you want to clean up the battery system."""
-            try:
-                cleanup_status = []
-
-                await self._cleanup_operations()
-                cleanup_status.append("Cancelled active battery operations")
-
-                if self.device_driver:
-                    self.device_driver.close()
-                    cleanup_status.append("Device driver closed")
-                    self.device_driver = None
-
-                self.battery_interface = None
-
-                if self.yarp_network:
-                    yarp.Network.fini()
-                    cleanup_status.append("YARP network finalized")
-                    self.yarp_network = None
-
-                self.battery_interface = False
-
-                return {
-                    "success": True,
-                    "cleanup_actions": cleanup_status
-                }
-
-            except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"Cleanup failed: {str(e)}"
-                }
-
         # Start YARP RPC info port in a background thread
         self._start_info_port()
 
@@ -544,23 +510,18 @@ operation resource and refetch it when notified. Use get_battery_charge() for a
 one-shot battery read.
 """.lstrip("\n")
 
-    def __del__(self):
-        """Destructor to ensure cleanup"""
-        self.info_port_running = False
-        if self.info_port:
-            try:
-                self.info_port.close()
-            except:
-                pass
-
-        if self.battery_interface:
-            try:
-                if self.device_driver:
-                    self.device_driver.close()
-                if self.yarp_network:
-                    yarp.Network.fini()
-            except:
-                pass
+    async def cleanup(self) -> None:
+        """Stop battery monitoring and release the YARP resources."""
+        self.fancyLog.INFO("Cleaning up YARP battery resources...")
+        try:
+            await self._cleanup_operations()
+        finally:
+            self._close_resource("device_driver", "battery device driver")
+            self.battery_interface = None
+            self._finalize_yarp_network()
+            self.is_initialized = False
+            self._cleanup_base_resources()
+        self.fancyLog.INFO("YARP battery resources cleaned up successfully.")
 
     def _interfaceView(self, devDriver):
         self.battery_interface = devDriver.viewIBattery()
