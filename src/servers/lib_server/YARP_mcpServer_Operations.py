@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from typing import Any
 
@@ -28,6 +29,7 @@ class Yarp_mcpServer_Operations(Yarp_mcpServer_Base):
             self._publish_operation_update,
         )
         self._operation_cleanup_task: asyncio.Task[Any] | None = None
+        self._operation_loop: asyncio.AbstractEventLoop | None = None
 
     async def _publish_operation_update(self, status_uri: str) -> None:
         await self.subscription_bus.publish(ResourceUpdated(status_uri))
@@ -41,13 +43,31 @@ class Yarp_mcpServer_Operations(Yarp_mcpServer_Base):
         await self.operation_registry.attach_task(operation.operation_id, task)
 
     async def _cleanup_operations(self) -> None:
+        owner_loop = self._operation_loop
+        current_loop = asyncio.get_running_loop()
+        if owner_loop is not None and owner_loop is not current_loop and owner_loop.is_running():
+            cleanup = asyncio.run_coroutine_threadsafe(
+                self._cleanup_operations_on_owner_loop(), owner_loop
+            )
+            try:
+                cleanup.result(timeout=5)
+            except concurrent.futures.TimeoutError as exc:
+                cleanup.cancel()
+                raise TimeoutError("Timed out while stopping server operations") from exc
+            return
+
+        await self._cleanup_operations_on_owner_loop()
+
+    async def _cleanup_operations_on_owner_loop(self) -> None:
         cleanup_task, self._operation_cleanup_task = self._operation_cleanup_task, None
         if cleanup_task is not None:
             cleanup_task.cancel()
             await asyncio.gather(cleanup_task, return_exceptions=True)
         await self.operation_registry.shutdown()
+        self._operation_loop = None
 
     async def _start_operation_maintenance(self) -> None:
+        self._operation_loop = asyncio.get_running_loop()
         if self._operation_cleanup_task is None:
             self._operation_cleanup_task = asyncio.create_task(
                 self._operation_maintenance_loop(),

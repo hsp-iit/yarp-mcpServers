@@ -6,38 +6,34 @@ from typing import Dict, Any
 import threading
 import time
 import yarp
-import uvicorn
-from mcp.server import MCPServer
+
+from ...lib_server.YARP_mcpServer_Base import Yarp_mcpServer_Base
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-class Yarp_mcpServer_JsonRes:
-    def __init__(self, config: yarp.ResourceFinder = None):
-        self.mcp = MCPServer(name="JSON Data Server", version="0.2.0")
-        self.yarp_network = None
-        self.info_port = None
-        self.info_port_running = False
-        self.server_name = "json_data"
-        self.base_url = "127.0.0.1"
-        self.mcp_port = 4003
+class Yarp_mcpServer_JsonRes(Yarp_mcpServer_Base):
+    def __init__(
+        self,
+        config: yarp.ResourceFinder = None,
+        logger_: logging.Logger = logger,
+        enableExplicitLogging: bool = True,
+    ):
         self.json_file_path = None
         self.data: Dict[str, Any] = {}
 
         json_file_name = "tours-with-italian-dates-in-chars.json"
         json_file_context = "test_servers"
 
-        if config:
-            if config.check("json_file"):
-                json_file_name = config.find("json_file").asString()
-            if config.check("json_context"):
-                json_file_context = config.find("json_context").asString()
-            if config.check("mcp_host"):
-                self.base_url = config.find("mcp_host").asString()
-            if config.check("mcp_port"):
-                self.mcp_port = config.find("mcp_port").asInt16()
-
-        self.mcp_url = f"http://{self.base_url}:{self.mcp_port}/mcp"
+        if config is None:
+            config = yarp.ResourceFinder()
+        config.setDefault("server_name", "json_data")
+        config.setDefault("mcp_host", "127.0.0.1")
+        config.setDefault("mcp_port", 4003)
+        if config.check("json_file"):
+            json_file_name = config.find("json_file").asString()
+        if config.check("json_context"):
+            json_file_context = config.find("json_context").asString()
 
         # Construct the full path to the JSON file
         jsonFinder = yarp.ResourceFinder()
@@ -51,12 +47,17 @@ class Yarp_mcpServer_JsonRes:
         # Build system prompt addendum
         self.system_prompt_addendum = self._build_system_prompt_addendum()
 
-        # Register resources and tools
-        self._register_resources()
-        self._register_tools()
+        super().__init__(config, logger_, enableExplicitLogging)
 
-        # Start YARP RPC info port in a background thread
+    def _register_common_tools(self) -> None:
+        self._register_resources()
+
+    def _register_internal_tools(self) -> None:
+        self._register_tools()
         self._start_info_port()
+
+    def _initialize(self) -> bool:
+        return Yarp_mcpServer_Base._initialize(self)
 
     def load_json_data(self) -> None:
         """Load JSON data from file"""
@@ -605,30 +606,11 @@ The complete JSON data is available as a read-only resource: json://data
         except Exception as e:
             logger.error(f"Error starting info port: {e}")
 
-    def __del__(self):
-        """Destructor to ensure cleanup"""
-        self.info_port_running = False
-        if self.info_port:
-            try:
-                self.info_port.close()
-            except:
-                pass
-
-    def run(self, host: str = None, port: int = None):
-        """Run the MCP server over Streamable HTTP."""
-        host_i = host if host else self.base_url
-        port_i = port if port else self.mcp_port
-
-        try:
-            logger.info(f"Starting JSON MCP Server on {host_i}:{port_i}")
-            # Get the ASGI app from MCPServer.
-            asgi_app = self.mcp.streamable_http_app()
-
-            # Run the app with uvicorn
-            uvicorn.run(asgi_app, host=host_i, port=port_i)
-        except Exception as e:
-            logger.error(f"Server error: {e}")
-            sys.exit(1)
+    async def cleanup(self) -> None:
+        """Stop the resource server and release its YARP resources."""
+        self._finalize_yarp_network()
+        self.is_initialized = False
+        self._cleanup_base_resources()
 
 if __name__ == "__main__":
     config = yarp.ResourceFinder()

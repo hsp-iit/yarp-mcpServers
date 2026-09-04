@@ -616,34 +616,6 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "error": f"Connection status error: {str(e)}"
                 }
 
-        @self.mcp.tool()
-        async def cleanup_yarp_navigation() -> dict[str, Any]:
-            """Shutdown the YARP navigation and free all system resources."""
-            try:
-                await self._cleanup_operations()
-
-                if self.device_driver:
-                    self.device_driver.close()
-                    self.device_driver = None
-
-                self.navigation_interface = None
-                self.is_initialized = False
-
-                if self.yarp_network:
-                    yarp.Network.fini()
-                    self.yarp_network = None
-
-                return {
-                    "success": True,
-                    "message": "Navigation system cleaned up successfully"
-                }
-            except Exception as e:
-                self.fancyLog.ERROR(f"Error during cleanup: {e}")
-                return {
-                    "success": False,
-                    "error": f"Cleanup error: {str(e)}"
-                }
-
         # ===================== LOCALIZATION TOOLS =====================
 
         @self.mcp.tool()
@@ -1291,27 +1263,18 @@ Example Relative Navigation:
   → Response: "Moving forward 2 meters with monitoring enabled. I'll notify you when complete."
 ═════════════════════════════════════════════════════════════════════════════════""".lstrip("\n")
 
-    def __del__(self):
-        """Destructor to ensure cleanup"""
-        self.info_port_running = False
-        if self.info_port:
-            try:
-                self.info_port.close()
-            except Exception as e:
-                self.fancyLog.WARNING(f"Error closing info port: {e}")
-
-        if self.navigation_interface:
-            try:
-                if self.device_driver:
-                    self.device_driver.close()
-                self.navigation_interface = None
-                self.device_driver = None
-                self.is_initialized = False
-                if self.yarp_network:
-                    yarp.Network.fini()
-                    self.yarp_network = None
-            except Exception as e:
-                self.fancyLog.WARNING(f"Error during cleanup: {e}")
+    async def cleanup(self) -> None:
+        """Stop navigation operations and release the YARP resources."""
+        self.fancyLog.INFO("Cleaning up YARP navigation resources...")
+        try:
+            await self._cleanup_operations()
+        finally:
+            self._close_resource("device_driver", "navigation device driver")
+            self.navigation_interface = None
+            self._finalize_yarp_network()
+            self.is_initialized = False
+            self._cleanup_base_resources()
+        self.fancyLog.INFO("YARP navigation resources cleaned up successfully.")
 
     def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool:
 

@@ -85,36 +85,6 @@ class Yarp_mcpServer_WakeWordRPC(Yarp_mcpServer_Base):
                 }
 
 
-        @self.mcp.tool()
-        async def cleanup_yarp_wakeword() -> dict[str, Any]:
-            """Shutdown the YARP wake word detector rpc client and free all system resources. Use this when you want to clean up the wake word system."""
-            # ... (kept your implementation unchanged)
-            try:
-                cleanup_status = []
-
-                if self.local_port:
-                    self.local_port.close()
-                    cleanup_status.append("Local RPC port closed")
-                    self.local_port = None
-
-                if self.yarp_network:
-                    yarp.Network.fini()
-                    cleanup_status.append("YARP network finalized")
-                    self.yarp_network = None
-
-                self.is_initialized = False
-
-                return {
-                    "success": True,
-                    "cleanup_actions": cleanup_status
-                }
-
-            except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"Cleanup failed: {str(e)}"
-                }
-
         # Start YARP RPC info port in a background thread
         self._start_info_port()
 
@@ -130,30 +100,18 @@ System Prompt Addendum:
 - This MCP server provides RPC tools to control a YARP wake word detection system.
 - Available tools:
   - stop: Stop passing audio to the next stage until the next wake word trigger.
-  - cleanup_yarp_wakeword: Clean up YARP resources used by the wake word system.
 - The server listens for RPC commands on the YARP port specified in the configuration (default: /wake_word/rpc:i) and sends commands to the wake word system via the local YARP port (default: /mcp_ww/rpc:o).
 - Use the provided tools to control the wake word detection behavior as needed. The stop tool should be called every time the user wants to end the conversation.
   If the intention of the user is to stop talking to you, call the stop tool and do not pass any more user input to the next stage until the next wake word trigger.
   If the intention of the user is to stop talking to you and they will not talk again, call the stop tool.
 """
 
-    def __del__(self):
-        """Destructor to ensure cleanup"""
-        self.info_port_running = False
-        if self.info_port:
-            try:
-                self.info_port.close()
-            except:
-                pass
-
-        if self.is_initialized:
-            try:
-                if self.local_port:
-                    self.local_port.close()
-                if self.yarp_network:
-                    yarp.Network.fini()
-            except:
-                pass
+    async def cleanup(self) -> None:
+        """Release the wake-word RPC client and YARP resources."""
+        self._close_resource("local_port", "wake-word RPC port")
+        self._finalize_yarp_network()
+        self.is_initialized = False
+        self._cleanup_base_resources()
 
     def _initialize(self) -> bool:
 
