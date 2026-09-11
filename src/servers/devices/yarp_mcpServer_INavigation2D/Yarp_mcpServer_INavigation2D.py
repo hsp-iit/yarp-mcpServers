@@ -11,7 +11,6 @@ Then the MCP endpoint will be available at:
 
 import asyncio
 import sys
-import logging
 import json
 import threading
 import time
@@ -34,14 +33,10 @@ except ImportError:
     print("ERROR: YARP Python bindings not found. Please install YARP with Python support.")
     sys.exit(1)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-globLogger = logging.getLogger(__name__)
-
 class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
     """MCP Server for YARP INavigation2D, ILocalization2D, and IMap2D interfaces (Streamable HTTP)"""
 
-    def __init__(self, conf=None, logger: logging.Logger = globLogger, enableExplicitLogging: bool = True):
+    def __init__(self, conf=None):
         self.navigation_interface = None
         server_name = "yarp_mcpServer_INavigation2D"
         self.device_name = "navigation2D_nwc_yarp"
@@ -65,7 +60,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
             if not conf.check("server_name"):
                 conf.setDefault("server_name", server_name)
 
-        Yarp_mcpServer_DeviceBase.__init__(self, conf, logger, enableExplicitLogging)
+        Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
         self.driver_options.put("navigation_server", conf.find("navigation_server").asString())
         self.driver_options.put("map_locations_server", conf.find("map_locations_server").asString())
@@ -208,7 +203,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     )
                     return
 
-                self.fancyLog.INFO(f"Navigation monitor {operation_id}: status={status_name}, elapsed={time.monotonic() - start_time:.1f}s")
+                self.log.info(f"Navigation monitor {operation_id}: status={status_name}, elapsed={time.monotonic() - start_time:.1f}s")
 
                 await asyncio.sleep(poll_interval)
 
@@ -224,7 +219,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
             )
             raise
         except Exception as e:
-            self.fancyLog.ERROR(f"Navigation monitor {operation_id} failed: {e}")
+            self.log.error(f"Navigation monitor {operation_id} failed: {e}")
             await self.operation_registry.update(
                 operation_id,
                 status="failed",
@@ -289,7 +284,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     message="Navigation command sent; operation monitoring is active",
                 )
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in goto_target: {e}")
+                self.log.error(f"Error in goto_target: {e}")
                 return OperationErrorResult(error=f"Navigation error: {str(e)}")
 
         @self.mcp.tool(structured_output=True)
@@ -336,7 +331,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     message="Relative navigation command sent; operation monitoring is active",
                 )
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in goto_target_by_relative_location: {e}")
+                self.log.error(f"Error in goto_target_by_relative_location: {e}")
                 return OperationErrorResult(error=f"Relative navigation error: {str(e)}")
 
         @self.mcp.tool(structured_output=True)
@@ -401,7 +396,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     message="Path navigation command sent; operation monitoring is active",
                 )
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in follow_path: {e}")
+                self.log.error(f"Error in follow_path: {e}")
                 return OperationErrorResult(error=f"Path following error: {str(e)}")
 
         @self.mcp.tool()
@@ -434,7 +429,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                         "error": "Failed to get current position"
                     }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_current_position: {e}")
+                self.log.error(f"Error in get_current_position: {e}")
                 return {
                     "success": False,
                     "error": f"Position retrieval error: {str(e)}"
@@ -468,7 +463,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "status_code": int(status)
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_navigation_status: {e}")
+                self.log.error(f"Error in get_navigation_status: {e}")
                 return {
                     "success": False,
                     "error": f"Status retrieval error: {str(e)}"
@@ -497,7 +492,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Navigation stopped successfully" if result else "Failed to stop navigation"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in stop_navigation: {e}")
+                self.log.error(f"Error in stop_navigation: {e}")
                 return {
                     "success": False,
                     "error": f"Stop error: {str(e)}"
@@ -520,7 +515,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Navigation suspended successfully" if result else "Failed to suspend navigation"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in suspend_navigation: {e}")
+                self.log.error(f"Error in suspend_navigation: {e}")
                 return {
                     "success": False,
                     "error": f"Suspend error: {str(e)}"
@@ -543,7 +538,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Navigation resumed successfully" if result else "Failed to resume navigation"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in resume_navigation: {e}")
+                self.log.error(f"Error in resume_navigation: {e}")
                 return {
                     "success": False,
                     "error": f"Resume error: {str(e)}"
@@ -579,7 +574,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                         "error": "No current target"
                     }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_absolute_target_location: {e}")
+                self.log.error(f"Error in get_absolute_target_location: {e}")
                 return {
                     "success": False,
                     "error": f"Target location query error: {str(e)}"
@@ -610,7 +605,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "status": status
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error checking connection status: {e}")
+                self.log.error(f"Error checking connection status: {e}")
                 return {
                     "success": False,
                     "error": f"Connection status error: {str(e)}"
@@ -637,7 +632,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Localization service started" if result else "Failed to start localization service"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in start_localization_service: {e}")
+                self.log.error(f"Error in start_localization_service: {e}")
                 return {
                     "success": False,
                     "error": f"Localization start error: {str(e)}"
@@ -662,7 +657,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Localization service stopped" if result else "Failed to stop localization service"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in stop_localization_service: {e}")
+                self.log.error(f"Error in stop_localization_service: {e}")
                 return {
                     "success": False,
                     "error": f"Localization stop error: {str(e)}"
@@ -696,7 +691,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "status_code": int(status)
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_localization_status: {e}")
+                self.log.error(f"Error in get_localization_status: {e}")
                 return {
                     "success": False,
                     "error": f"Localization status error: {str(e)}"
@@ -733,7 +728,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "pose_count": len(poses_list)
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_estimated_poses: {e}")
+                self.log.error(f"Error in get_estimated_poses: {e}")
                 return {
                     "success": False,
                     "error": f"Pose estimation error: {str(e)}"
@@ -777,7 +772,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                         "error": "Failed to get odometry data"
                     }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_estimated_odometry: {e}")
+                self.log.error(f"Error in get_estimated_odometry: {e}")
                 return {
                     "success": False,
                     "error": f"Odometry retrieval error: {str(e)}"
@@ -812,7 +807,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Initial pose set successfully" if result else "Failed to set initial pose"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in set_initial_pose: {e}")
+                self.log.error(f"Error in set_initial_pose: {e}")
                 return {
                     "success": False,
                     "error": f"Set initial pose error: {str(e)}"
@@ -849,7 +844,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Location stored successfully" if result else "Failed to store location"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in store_location: {e}")
+                self.log.error(f"Error in store_location: {e}")
                 return {
                     "success": False,
                     "error": f"Store location error: {str(e)}"
@@ -885,7 +880,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                         "error": f"Location '{location_name}' not found"
                     }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_location: {e}")
+                self.log.error(f"Error in get_location: {e}")
                 return {
                     "success": False,
                     "error": f"Get location error: {str(e)}"
@@ -918,7 +913,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                         "error": "Failed to get locations list"
                     }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_locations_list: {e}")
+                self.log.error(f"Error in get_locations_list: {e}")
                 return {
                     "success": False,
                     "error": f"Get locations list error: {str(e)}"
@@ -944,7 +939,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Location deleted successfully" if result else "Failed to delete location"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in delete_location: {e}")
+                self.log.error(f"Error in delete_location: {e}")
                 return {
                     "success": False,
                     "error": f"Delete location error: {str(e)}"
@@ -971,7 +966,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Location renamed successfully" if result else "Failed to rename location"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in rename_location: {e}")
+                self.log.error(f"Error in rename_location: {e}")
                 return {
                     "success": False,
                     "error": f"Rename location error: {str(e)}"
@@ -1012,7 +1007,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Area stored successfully" if result else "Failed to store area"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in store_area: {e}")
+                self.log.error(f"Error in store_area: {e}")
                 return {
                     "success": False,
                     "error": f"Store area error: {str(e)}"
@@ -1052,7 +1047,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                         "error": f"Area '{area_name}' not found"
                     }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_area: {e}")
+                self.log.error(f"Error in get_area: {e}")
                 return {
                     "success": False,
                     "error": f"Get area error: {str(e)}"
@@ -1083,7 +1078,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                         "error": "Failed to get areas list"
                     }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in get_areas_list: {e}")
+                self.log.error(f"Error in get_areas_list: {e}")
                 return {
                     "success": False,
                     "error": f"Get areas list error: {str(e)}"
@@ -1109,7 +1104,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Area deleted successfully" if result else "Failed to delete area"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in delete_area: {e}")
+                self.log.error(f"Error in delete_area: {e}")
                 return {
                     "success": False,
                     "error": f"Delete area error: {str(e)}"
@@ -1136,7 +1131,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "is_inside": is_inside
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in check_inside_area: {e}")
+                self.log.error(f"Error in check_inside_area: {e}")
                 return {
                     "success": False,
                     "error": f"Check inside area error: {str(e)}"
@@ -1162,7 +1157,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Current position stored successfully" if result else "Failed to store current position"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in store_current_position: {e}")
+                self.log.error(f"Error in store_current_position: {e}")
                 return {
                     "success": False,
                     "error": f"Store current position error: {str(e)}"
@@ -1188,7 +1183,7 @@ class Yarp_mcpServer_INavigation2D(Yarp_mcpServer_DeviceBase):
                     "message": "Locations and extras saved successfully" if result else "Failed to save locations and extras"
                 }
             except Exception as e:
-                self.fancyLog.ERROR(f"Error in save_locations_and_extras: {e}")
+                self.log.error(f"Error in save_locations_and_extras: {e}")
                 return {
                     "success": False,
                     "error": f"Save locations and extras error: {str(e)}"
@@ -1265,7 +1260,7 @@ Example Relative Navigation:
 
     async def cleanup(self) -> None:
         """Stop navigation operations and release the YARP resources."""
-        self.fancyLog.INFO("Cleaning up YARP navigation resources...")
+        self.log.info("Cleaning up YARP navigation resources...")
         try:
             await self._cleanup_operations()
         finally:
@@ -1274,7 +1269,7 @@ Example Relative Navigation:
             self._finalize_yarp_network()
             self.is_initialized = False
             self._cleanup_base_resources()
-        self.fancyLog.INFO("YARP navigation resources cleaned up successfully.")
+        self.log.info("YARP navigation resources cleaned up successfully.")
 
     def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool:
 
@@ -1282,7 +1277,7 @@ Example Relative Navigation:
         self.navigation_interface = devDriver.viewINavigation2D()
 
         if self.navigation_interface is None:
-            self.fancyLog.ERROR("Failed to get INavigation2D interface")
+            self.log.error("Failed to get INavigation2D interface")
             return False
 
         return True
