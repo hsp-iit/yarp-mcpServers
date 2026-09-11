@@ -4,22 +4,17 @@ Base class for yarp device based YARP_mcpServer. This class is used to create a 
 
 from abc import abstractmethod
 import asyncio
-import logging
 from typing import Any, Callable
 
 from .YARP_mcpServer_Base import MissingParameterError, yarp
 from .YARP_mcpServer_Operations import Yarp_mcpServer_Operations
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-globLogger = logging.getLogger(__name__)
-
 class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Operations):
     """Abstract Base class for device related Yarp_mcpServer"""
 
     @abstractmethod
-    def __init__(self, conf:yarp.ResourceFinder=None, logger: logging.Logger = globLogger, enableExplicitLogging: bool = True):
-        Yarp_mcpServer_Operations.__init__(self, conf, logger, enableExplicitLogging)
+    def __init__(self, conf:yarp.ResourceFinder=None):
+        Yarp_mcpServer_Operations.__init__(self, conf)
         self.device_driver = None
         self._yarp_call_lock = asyncio.Lock()
 
@@ -56,7 +51,7 @@ class Yarp_mcpServer_DeviceBase(Yarp_mcpServer_Operations):
         self.device_driver = yarp.PolyDriver(self.driver_options)
 
         if not self.device_driver.isValid():
-            self.fancyLog.ERROR(f"Failed to create {self.driver_options.find('device').asString()} device. Check if the device is available.")
+            self.log.error(f"Failed to create {self.driver_options.find('device').asString()} device. Check if the device is available.")
             return False
 
 
