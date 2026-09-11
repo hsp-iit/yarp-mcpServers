@@ -9,7 +9,6 @@ Then the MCP endpoint will be available at:
     http://127.0.0.1:4000/mcp
 """
 import asyncio
-import logging
 from typing import Any, Sequence
 import sys
 import os
@@ -28,14 +27,10 @@ except ImportError:
     print("ERROR: YARP Python bindings not found. Please install YARP with Python support.")
     sys.exit(1)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-globLogger = logging.getLogger(__name__)
-
 class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
     """YARP Speech Synthesis MCP Server"""
 
-    def __init__(self, conf=None, logger: logging.Logger = globLogger, enableFancyLogging: bool = True):
+    def __init__(self, conf=None):
         self.speech_interface = None
         self.output_port = None
         server_name = "yarp_mcpServer_ISpeechSynthesizer"
@@ -54,7 +49,7 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                 conf.setDefault("server_name", server_name)
 
         self.output_port_name = self.local_port + "/audio:o"
-        Yarp_mcpServer_DeviceBase.__init__(self, conf, logger, enableFancyLogging)
+        Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
     def _register_internal_tools(self):
         """Register MCP tools"""
@@ -81,22 +76,22 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                 if language != "auto":
                     ret = self.speech_interface.setLanguage(language)
                     if not ret:
-                        self.fancyLog.WARNING(f"Failed to set language to {language}")
+                        self.log.warning(f"Failed to set language to {language}")
 
                 if voice != "auto":
                     ret = self.speech_interface.setVoice(voice)
                     if not ret:
-                        self.fancyLog.WARNING(f"Failed to set voice to {voice}")
+                        self.log.warning(f"Failed to set voice to {voice}")
 
                 if speed != 1.0:
                     ret = self.speech_interface.setSpeed(speed)
                     if not ret:
-                        self.fancyLog.WARNING(f"Failed to set speed to {speed}")
+                        self.log.warning(f"Failed to set speed to {speed}")
 
                 if pitch != 1.0:
                     ret = self.speech_interface.setPitch(pitch)
                     if not ret:
-                        self.fancyLog.WARNING(f"Failed to set pitch to {pitch}")
+                        self.log.warning(f"Failed to set pitch to {pitch}")
 
                 # Create Sound object for output
                 sound = yarp.Sound()
@@ -133,7 +128,7 @@ class Yarp_mcpServer_ISpeechSynthesizer(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error during speech synthesis: {e}")
+                self.log.error(f"Error during speech synthesis: {e}")
                 return {
                     "success": False,
                     "error": f"Speech synthesis error: {str(e)}"
@@ -257,7 +252,7 @@ This is your core function. Act accordingly.""".lstrip("\n")
 
     async def cleanup(self) -> None:
         """Stop speech operations and release the YARP resources."""
-        self.fancyLog.INFO("Cleaning up YARP speech synthesizer resources...")
+        self.log.info("Cleaning up YARP speech synthesizer resources...")
         try:
             await self._cleanup_operations()
         finally:
@@ -267,7 +262,7 @@ This is your core function. Act accordingly.""".lstrip("\n")
             self._finalize_yarp_network()
             self.is_initialized = False
             self._cleanup_base_resources()
-        self.fancyLog.INFO("YARP speech synthesizer resources cleaned up successfully.")
+        self.log.info("YARP speech synthesizer resources cleaned up successfully.")
 
     def _interfaceView(self, devDriver:yarp.PolyDriver) -> bool:
 
@@ -275,13 +270,13 @@ This is your core function. Act accordingly.""".lstrip("\n")
         self.speech_interface = devDriver.viewISpeechSynthesizer()
 
         if self.speech_interface is None:
-            self.fancyLog.ERROR("Failed to get ISpeechSynthesizer interface")
+            self.log.error("Failed to get ISpeechSynthesizer interface")
             return False
 
         # Create output port for Sound
         self.output_port = yarp.Port()
         if not self.output_port.open(self.output_port_name):
-            self.fancyLog.WARNING(f"Failed to open output port {self.output_port_name}")
+            self.log.warning(f"Failed to open output port {self.output_port_name}")
             self.output_port = None
             return False
 

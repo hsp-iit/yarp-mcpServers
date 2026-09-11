@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import logging
 from typing import Dict, Any
 import threading
 import time
@@ -9,18 +8,15 @@ import yarp
 
 from ...lib_server.YARP_mcpServer_Base import Yarp_mcpServer_Base
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
 class Yarp_mcpServer_JsonRes(Yarp_mcpServer_Base):
     def __init__(
         self,
         config: yarp.ResourceFinder = None,
-        logger_: logging.Logger = logger,
-        enableExplicitLogging: bool = True,
     ):
         self.json_file_path = None
         self.data: Dict[str, Any] = {}
+        self.log_component = yarp.LogComponent(self.__class__.__name__)
+        self.log = yarp.Log(__file__, 0, self.__class__.__name__, None, self.log_component)
 
         json_file_name = "tours-with-italian-dates-in-chars.json"
         json_file_context = "test_servers"
@@ -47,7 +43,7 @@ class Yarp_mcpServer_JsonRes(Yarp_mcpServer_Base):
         # Build system prompt addendum
         self.system_prompt_addendum = self._build_system_prompt_addendum()
 
-        super().__init__(config, logger_, enableExplicitLogging)
+        super().__init__(config)
 
     def _register_common_tools(self) -> None:
         self._register_resources()
@@ -67,9 +63,9 @@ class Yarp_mcpServer_JsonRes(Yarp_mcpServer_Base):
 
             with open(self.json_file_path, 'r') as f:
                 self.data = json.load(f)
-            logger.info(f"Successfully loaded JSON data from {self.json_file_path}")
+            self.log.info(f"Successfully loaded JSON data from {self.json_file_path}")
         except Exception as e:
-            logger.error(f"Error loading JSON file: {e}")
+            self.log.error(f"Error loading JSON file: {e}")
             raise
 
     def _build_system_prompt_addendum(self) -> str:
@@ -198,7 +194,7 @@ The complete JSON data is available as a read-only resource: json://data
                     "matches": matching_keys[:20]  # Return top 20 matches
                 }
             except Exception as e:
-                logger.error(f"Error searching JSON keys: {e}")
+                self.log.error(f"Error searching JSON keys: {e}")
                 return {
                     "success": False,
                     "error": f"Search error: {str(e)}"
@@ -244,7 +240,7 @@ The complete JSON data is available as a read-only resource: json://data
                     "structure": structure
                 }
             except Exception as e:
-                logger.error(f"Error listing JSON structure: {e}")
+                self.log.error(f"Error listing JSON structure: {e}")
                 return {
                     "success": False,
                     "error": f"Structure error: {str(e)}"
@@ -307,7 +303,7 @@ The complete JSON data is available as a read-only resource: json://data
                     "error": f"Key not found in path: {str(e)}"
                 }
             except Exception as e:
-                logger.error(f"Error retrieving JSON by path: {e}")
+                self.log.error(f"Error retrieving JSON by path: {e}")
                 return {
                     "success": False,
                     "error": f"Path error: {str(e)}"
@@ -385,7 +381,7 @@ The complete JSON data is available as a read-only resource: json://data
                     "message": "Value updated successfully"
                 }
             except Exception as e:
-                logger.error(f"Error setting JSON by path: {e}")
+                self.log.error(f"Error setting JSON by path: {e}")
                 return {
                     "success": False,
                     "error": f"Set path error: {str(e)}"
@@ -411,7 +407,7 @@ The complete JSON data is available as a read-only resource: json://data
                 with open(file_path, 'w') as f:
                     json.dump(self.data, f, indent=2)
 
-                logger.info(f"Successfully saved current JSON data to {file_path}")
+                self.log.info(f"Successfully saved current JSON data to {file_path}")
 
                 return {
                     "success": True,
@@ -419,7 +415,7 @@ The complete JSON data is available as a read-only resource: json://data
                     "message": "Current JSON data saved successfully"
                 }
             except Exception as e:
-                logger.error(f"Error saving JSON to file: {e}")
+                self.log.error(f"Error saving JSON to file: {e}")
                 return {
                     "success": False,
                     "error": f"Save error: {str(e)}"
@@ -471,7 +467,7 @@ The complete JSON data is available as a read-only resource: json://data
                     "matches": matches[:max_results]
                 }
             except Exception as e:
-                logger.error(f"Error searching JSON values: {e}")
+                self.log.error(f"Error searching JSON values: {e}")
                 return {
                     "success": False,
                     "error": f"Search error: {str(e)}"
@@ -503,7 +499,7 @@ The complete JSON data is available as a read-only resource: json://data
                 }
 
             except Exception as e:
-                logger.error(f"Error checking connection status: {e}")
+                self.log.error(f"Error checking connection status: {e}")
                 return {
                     "success": False,
                     "error": f"Status check failed: {str(e)}"
@@ -533,7 +529,7 @@ The complete JSON data is available as a read-only resource: json://data
                 if file_path:
                     self.json_file_path = file_path
 
-                logger.info(f"Successfully reloaded JSON data from {target_file}")
+                self.log.info(f"Successfully reloaded JSON data from {target_file}")
 
                 return {
                     "success": True,
@@ -543,13 +539,13 @@ The complete JSON data is available as a read-only resource: json://data
                 }
 
             except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}")
+                self.log.error(f"JSON decode error: {e}")
                 return {
                     "success": False,
                     "error": f"Invalid JSON format: {str(e)}"
                 }
             except Exception as e:
-                logger.error(f"Error reloading JSON data: {e}")
+                self.log.error(f"Error reloading JSON data: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to reload data: {str(e)}"
@@ -567,11 +563,11 @@ The complete JSON data is available as a read-only resource: json://data
             port_name = "/mcp_server/json/info:o"
 
             if not self.info_port.open(port_name):
-                logger.warning(f"Failed to open info port {port_name}")
+                self.log.warning(f"Failed to open info port {port_name}")
                 self.info_port = None
                 return
 
-            logger.info(f"Opened YARP info port at {port_name}")
+            self.log.info(f"Opened YARP info port at {port_name}")
             self.info_port_running = True
 
             # Start listening for RPC commands in a background thread
@@ -583,7 +579,7 @@ The complete JSON data is available as a read-only resource: json://data
 
                         if self.info_port.read(cmd, True):
                             cmd_str = cmd.toString()
-                            logger.debug(f"Received RPC command: {cmd_str}")
+                            self.log.debug(f"Received RPC command: {cmd_str}")
                             if "get_name" in cmd_str:
                                 reply.addString(self.server_name)
                                 self.info_port.reply(reply)
@@ -595,7 +591,7 @@ The complete JSON data is available as a read-only resource: json://data
                                 reply.addString(self.system_prompt_addendum)
                                 self.info_port.reply(reply)
                     except Exception as e:
-                        logger.debug(f"RPC port error: {e}")
+                        self.log.debug(f"RPC port error: {e}")
 
                     time.sleep(0.01)
 
@@ -604,7 +600,7 @@ The complete JSON data is available as a read-only resource: json://data
             rpc_thread.start()
 
         except Exception as e:
-            logger.error(f"Error starting info port: {e}")
+            self.log.error(f"Error starting info port: {e}")
 
     async def cleanup(self) -> None:
         """Stop the resource server and release its YARP resources."""

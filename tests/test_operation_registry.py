@@ -1,7 +1,6 @@
 import asyncio
 import json
 from datetime import timedelta
-from types import SimpleNamespace
 
 import pytest
 from mcp import Client
@@ -193,7 +192,7 @@ async def test_navigation_active_to_idle_completes_operation() -> None:
     server.info_port = None
     server.device_driver = None
     server.yarp_network = None
-    server.fancyLog = SimpleNamespace(INFO=lambda *_args: None, ERROR=lambda *_args: None)
+    server.log = type("Log", (), {"info": lambda *_args: None, "error": lambda *_args: None})()
     original_status_name = server._navigation_status_name
     server._navigation_status_name = lambda status: {1: "moving", 0: "idle"}[int(status)]
 

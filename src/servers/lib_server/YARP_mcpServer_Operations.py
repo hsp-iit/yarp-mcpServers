@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import logging
 from typing import Any
 
 from mcp.server.subscriptions import ResourceUpdated
 
-from .YARP_mcpServer_Base import Yarp_mcpServer_Base, globLogger, yarp
+from .YARP_mcpServer_Base import Yarp_mcpServer_Base, yarp
 from .operation_models import OperationListResult, OperationSnapshot, StartOperationResult
 from .operation_registry import OperationNotFoundError, OperationRegistry
 
@@ -20,10 +19,8 @@ class Yarp_mcpServer_Operations(Yarp_mcpServer_Base):
     def __init__(
         self,
         conf: yarp.ResourceFinder | None = None,
-        logger: logging.Logger = globLogger,
-        enableExplicitLogging: bool = True,
     ) -> None:
-        super().__init__(conf, logger, enableExplicitLogging)
+        super().__init__(conf)
         self.operation_registry = OperationRegistry(
             self.server_name,
             self._publish_operation_update,
@@ -79,7 +76,7 @@ class Yarp_mcpServer_Operations(Yarp_mcpServer_Base):
             await asyncio.sleep(60)
             removed = await self.operation_registry.remove_expired()
             if removed:
-                self.fancyLog.DEBUG(f"Expired {removed} retained operation(s)")
+                self.log.debug(f"Expired {removed} retained operation(s)")
 
     async def _cancel_operation(self, operation_id: str) -> OperationSnapshot:
         """Cancellation hook for servers that must also stop domain-level work."""

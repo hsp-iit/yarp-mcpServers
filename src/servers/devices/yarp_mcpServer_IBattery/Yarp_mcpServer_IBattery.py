@@ -9,7 +9,6 @@ Then the MCP endpoint will be available at:
     http://127.0.0.1:4001/mcp
 """
 import asyncio
-import logging
 from typing import Any, Sequence
 import sys
 import os
@@ -30,14 +29,10 @@ except ImportError:
     sys.exit(1)
 
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-globLogger = logging.getLogger(__name__)
-
 class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
     """YARP Battery MCP Server"""
 
-    def __init__(self, conf=None, logger: logging.Logger = globLogger, enableExplicitLogging: bool = True):
+    def __init__(self, conf=None):
         self.battery_interface = None
         server_name = "yarp_mcpServer_IBattery"
         device_name = "battery_nwc_yarp"
@@ -54,7 +49,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
             if not conf.check("server_name"):
                 conf.setDefault("server_name", server_name)
 
-        Yarp_mcpServer_DeviceBase.__init__(self, conf, logger, enableExplicitLogging)
+        Yarp_mcpServer_DeviceBase.__init__(self, conf)
 
 
     async def _battery_charge_monitor_loop(
@@ -137,7 +132,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
             )
             raise
         except Exception as e:
-            self.fancyLog.ERROR(f"Battery charge monitor {operation_id} failed: {e}")
+            self.log.error(f"Battery charge monitor {operation_id} failed: {e}")
             await self.operation_registry.update(
                 operation_id,
                 status="failed",
@@ -168,7 +163,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error getting battery voltage: {e}")
+                self.log.error(f"Error getting battery voltage: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to get voltage: {str(e)}"
@@ -193,7 +188,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error getting battery current: {e}")
+                self.log.error(f"Error getting battery current: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to get current: {str(e)}"
@@ -220,7 +215,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error getting battery charge: {e}")
+                self.log.error(f"Error getting battery charge: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to get charge: {str(e)}"
@@ -323,7 +318,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error getting battery temperature: {e}")
+                self.log.error(f"Error getting battery temperature: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to get temperature: {str(e)}"
@@ -361,7 +356,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error getting battery status: {e}")
+                self.log.error(f"Error getting battery status: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to get status: {str(e)}"
@@ -385,7 +380,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 }
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error getting battery info: {e}")
+                self.log.error(f"Error getting battery info: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to get info: {str(e)}"
@@ -458,7 +453,7 @@ class Yarp_mcpServer_IBattery(Yarp_mcpServer_DeviceBase):
                 return data
 
             except Exception as e:
-                self.fancyLog.ERROR(f"Error getting battery data: {e}")
+                self.log.error(f"Error getting battery data: {e}")
                 return {
                     "success": False,
                     "error": f"Failed to get battery data: {str(e)}"
@@ -512,7 +507,7 @@ one-shot battery read.
 
     async def cleanup(self) -> None:
         """Stop battery monitoring and release the YARP resources."""
-        self.fancyLog.INFO("Cleaning up YARP battery resources...")
+        self.log.info("Cleaning up YARP battery resources...")
         try:
             await self._cleanup_operations()
         finally:
@@ -521,13 +516,13 @@ one-shot battery read.
             self._finalize_yarp_network()
             self.is_initialized = False
             self._cleanup_base_resources()
-        self.fancyLog.INFO("YARP battery resources cleaned up successfully.")
+        self.log.info("YARP battery resources cleaned up successfully.")
 
     def _interfaceView(self, devDriver):
         self.battery_interface = devDriver.viewIBattery()
 
         if self.battery_interface is None:
-            self.fancyLog.ERROR(f"Failed to view IBattery interface for {self.device_name}.")
+            self.log.error(f"Failed to view IBattery interface for {self.device_name}.")
             return False
 
         return True

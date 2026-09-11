@@ -4,7 +4,6 @@ Base class for YARP_mcpServer. This class is used to create a server that can co
 
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-import logging
 import json
 import threading
 import time
@@ -17,19 +16,12 @@ from typing import Any, Sequence
 from mcp.server import MCPServer
 from mcp.server.subscriptions import InMemorySubscriptionBus
 
-from ...modules.fancyLogging import FancyLogger
-
 # Try to import YARP
 try:
     import yarp
 except ImportError:
     print("ERROR: YARP Python bindings not found. Please install YARP with Python support.")
     sys.exit(1)
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-globLogger = logging.getLogger(__name__)
-
 
 class MissingParameterError(Exception):
     """Custom exception for missing parameters in the configuration."""
@@ -40,17 +32,18 @@ class MissingParameterError(Exception):
 
 
 class McpServerRpcReader(yarp.PortReader):
-    def __init__(self, mcp_server, logger):
+    def __init__(self, mcp_server):
         yarp.PortReader.__init__(self)
         self.mcp_server = mcp_server
-        self.logger = logger
+        self.log_component = yarp.LogComponent(self.__class__.__name__)
+        self.log = yarp.Log(__file__, 0, self.__class__.__name__, None, self.log_component)
 
     def read(self, connection):
         command = yarp.Bottle()
         if not command.read(connection):
             return False
 
-        self.logger.INFO(f"Received command: {command.toString()}")
+        self.log.info(f"Received command: {command.toString()}")
 
         reply = yarp.Bottle()
         reply.fromString(self.mcp_server.handle_command(command.toString()))
@@ -65,7 +58,7 @@ class Yarp_mcpServer_Base(ABC):
     """Abstract Base class for Yarp_mcpServer"""
 
     @abstractmethod
-    def __init__(self, conf:yarp.ResourceFinder=None, logger: logging.Logger = globLogger,enableExplicitLogging: bool = True):
+    def __init__(self, conf:yarp.ResourceFinder=None):
         self.yarp_network = None
         self.is_initialized = False
         self.tool_descriptions = {}
@@ -76,7 +69,9 @@ class Yarp_mcpServer_Base(ABC):
         self.server_name = None
         self.rpcHandler = None
         self._uvicorn_server = None
-        self.fancyLog = FancyLogger(self.__class__.__name__, logger, enableExplicitLogging)
+        if not hasattr(self, "log"):
+            self.log_component = yarp.LogComponent(self.__class__.__name__)
+            self.log = yarp.Log(__file__, 0, self.__class__.__name__, None, self.log_component)
 
         if conf:
             # YARP Property object
@@ -144,17 +139,17 @@ class Yarp_mcpServer_Base(ABC):
             self.info_port = yarp.RpcServer()
             port_name = f"/mcp_server/{self.server_name}/info:o"
 
-            self.fancyLog.INFO(f"Opened YARP info port at {port_name}")
+            self.log.info(f"Opened YARP info port at {port_name}")
             self.info_port_running = True
-            self.rpcHandler = McpServerRpcReader(self, self.fancyLog)
+            self.rpcHandler = McpServerRpcReader(self)
             self.info_port.setReader(self.rpcHandler)
             if not self.info_port.open(port_name):
-                self.fancyLog.WARNING(f"Failed to open info port {port_name}")
+                self.log.warning(f"Failed to open info port {port_name}")
                 self.info_port = None
                 return
 
         except Exception as e:
-            self.fancyLog.ERROR(f"Error starting info port: {e}")
+            self.log.error(f"Error starting info port: {e}")
 
     @abstractmethod
     def _register_common_tools(self):
@@ -182,7 +177,7 @@ class Yarp_mcpServer_Base(ABC):
             try:
                 resource.close()
             except Exception as exc:
-                self.fancyLog.WARNING(f"Error closing {description}: {exc}")
+                self.log.warning(f"Error closing {description}: {exc}")
             finally:
                 setattr(self, attribute, None)
 
@@ -192,7 +187,7 @@ class Yarp_mcpServer_Base(ABC):
             try:
                 yarp.Network.fini()
             except Exception as exc:
-                self.fancyLog.WARNING(f"Error finalizing YARP network: {exc}")
+                self.log.warning(f"Error finalizing YARP network: {exc}")
             finally:
                 self.yarp_network = None
 
@@ -202,7 +197,7 @@ class Yarp_mcpServer_Base(ABC):
         # Check if YARP server is running
         self.yarp_network = yarp.Network()
         if not self.yarp_network.checkNetwork():
-            self.fancyLog.ERROR("YARP network not available. Please start yarpserver.")
+            self.log.error("YARP network not available. Please start yarpserver.")
             return False
         return True
 
@@ -213,13 +208,13 @@ class Yarp_mcpServer_Base(ABC):
 
         self.is_initialized = self._initialize()
         if not self.is_initialized:
-            self.fancyLog.ERROR("Failed to initialize the server. Exiting.")
+            self.log.error("Failed to initialize the server. Exiting.")
             return
 
         host_i = host if host else self.base_url
         port_i = port if port else self.mcp_port
         try:
-            self.fancyLog.INFO(f"Starting YARP {self.server_name} MCP Server on {host_i}:{port_i}")
+            self.log.info(f"Starting YARP {self.server_name} MCP Server on {host_i}:{port_i}")
             # Get the ASGI app from MCPServer. Its lifespan owns transport work.
             asgi_app = self.mcp.streamable_http_app()
             # Keep the server object so cleanup() can request a graceful stop.
@@ -227,6 +222,6 @@ class Yarp_mcpServer_Base(ABC):
             self._uvicorn_server = uvicorn.Server(config)
             self._uvicorn_server.run()
         except Exception as e:
-            self.fancyLog.ERROR(f"Server error: {e}")
+            self.log.error(f"Server error: {e}")
         finally:
             self._uvicorn_server = None
